@@ -21,6 +21,10 @@ public sealed class OutlookConnectorService : IDisposable
     private const int olFolderInbox = 6;
     private const int olFolderDeletedItems = 3;
 
+    // Rule constants
+    private const int olRuleReceive = 0;
+    private const int olRuleActionMoveToFolder = 1;
+
     // Triage Folder Names
     public const string SmartCleanupFolderName = "Smart Cleanup";
     public const string DeleteCandidatesFolderName = "Delete Candidates";
