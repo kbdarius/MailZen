@@ -1,0 +1,16 @@
+# Build outputs
+**/bin/
+**/obj/
+publish/
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Local packages
+src/local-packages/

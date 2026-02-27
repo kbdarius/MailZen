@@ -18,14 +18,17 @@ public sealed class OutlookConnectorService : IDisposable
     private bool _disposed;
 
     // OlDefaultFolders constants (late-bound, no interop enum needed)
-    private const int olFolderInbox = 6;
-    private const int olFolderDeletedItems = 3;
+    public const int OlFolderInbox = 6;
+    public const int OlFolderDeletedItems = 3;
 
     // Rule constants
     private const int olRuleReceive = 0;
     private const int olRuleActionMoveToFolder = 1;
 
-    // Triage Folder Names
+    // ── Folder Names ──
+    public const string ReviewForDeletionFolderName = "Review for Deletion";
+
+    // Legacy folder names (kept for migration/cleanup)
     public const string SmartCleanupFolderName = "Smart Cleanup";
     public const string DeleteCandidatesFolderName = "Delete Candidates";
     public const string NeedsReviewFolderName = "Needs Review";
@@ -214,14 +217,14 @@ public sealed class OutlookConnectorService : IDisposable
                         {
                             try
                             {
-                                dynamic inbox = store.GetDefaultFolder(olFolderInbox);
+                                dynamic inbox = store.GetDefaultFolder(OlFolderInbox);
                                 info.InboxCount = (int)inbox.Items.Count;
                             }
                             catch { }
 
                             try
                             {
-                                dynamic deleted = store.GetDefaultFolder(olFolderDeletedItems);
+                                dynamic deleted = store.GetDefaultFolder(OlFolderDeletedItems);
                                 info.DeletedItemsCount = (int)deleted.Items.Count;
                             }
                             catch { }
@@ -309,7 +312,7 @@ public sealed class OutlookConnectorService : IDisposable
         return accounts;
     }
 
-    public async Task<List<EmailMessageInfo>> GetEmailsAsync(string emailAddress, string storeName, OutlookFolderType folderType, int maxMonths, int maxItems = 1000, bool skipUnread = true)
+    public async Task<List<EmailMessageInfo>> GetEmailsAsync(string emailAddress, string storeName, int folderType, int maxMonths, int maxItems = 1000, bool skipUnread = true)
     {
         return await Task.Run(() =>
         {
@@ -349,7 +352,7 @@ public sealed class OutlookConnectorService : IDisposable
                         return;
                     }
 
-                    dynamic folder = targetStore.GetDefaultFolder((int)folderType);
+                    dynamic folder = targetStore.GetDefaultFolder(folderType);
                     dynamic items = folder.Items;
                     
                     // Sort by received time descending
@@ -377,7 +380,7 @@ public sealed class OutlookConnectorService : IDisposable
                             bool unread = (bool)item.UnRead;
 
                             // For inbox, we only want read emails (kept) if skipUnread is true
-                            if (skipUnread && folderType == OutlookFolderType.Inbox && unread) continue;
+                            if (skipUnread && folderType == OlFolderInbox && unread) continue;
 
                             string senderEmail = "";
                             try { senderEmail = (string)item.SenderEmailAddress; } catch { }
@@ -406,7 +409,7 @@ public sealed class OutlookConnectorService : IDisposable
                                 Body = (string)(item.Body ?? ""),
                                 ReceivedTime = receivedTime,
                                 UnRead = unread,
-                                IsDeleted = folderType == OutlookFolderType.DeletedItems
+                                IsDeleted = folderType == OlFolderDeletedItems
                             });
 
                             fetched++;
@@ -667,7 +670,7 @@ public sealed class OutlookConnectorService : IDisposable
                     dynamic? targetStore = FindStore(session, emailAddress, storeName);
                     if (targetStore is null) return;
 
-                    dynamic deletedFolder = targetStore.GetDefaultFolder(olFolderDeletedItems);
+                    dynamic deletedFolder = targetStore.GetDefaultFolder(OlFolderDeletedItems);
                     dynamic item = session.GetItemFromID(entryId, targetStore.StoreID);
                     dynamic movedItem = item.Move(deletedFolder);
                     newEntryId = (string)movedItem.EntryID;
@@ -704,7 +707,7 @@ public sealed class OutlookConnectorService : IDisposable
                     dynamic? targetStore = FindStore(session, emailAddress, storeName);
                     if (targetStore is null) return;
 
-                    dynamic inboxFolder = targetStore.GetDefaultFolder(olFolderInbox);
+                    dynamic inboxFolder = targetStore.GetDefaultFolder(OlFolderInbox);
                     dynamic item = session.GetItemFromID(entryId, targetStore.StoreID);
                     dynamic movedItem = item.Move(inboxFolder);
                     newEntryId = (string)movedItem.EntryID;
@@ -959,7 +962,7 @@ public sealed class OutlookConnectorService : IDisposable
                     dynamic rootFolder = targetStore.GetRootFolder();
                     dynamic smartCleanup = rootFolder.Folders[SmartCleanupFolderName];
                     dynamic sourceFolder = smartCleanup.Folders[subFolderName];
-                    dynamic inboxFolder = targetStore.GetDefaultFolder(olFolderInbox);
+                    dynamic inboxFolder = targetStore.GetDefaultFolder(OlFolderInbox);
                     dynamic items = sourceFolder.Items;
 
                     // Move in reverse order (COM collections shift indices on removal)
@@ -991,6 +994,397 @@ public sealed class OutlookConnectorService : IDisposable
             thread.Start();
             thread.Join(TimeSpan.FromMinutes(5));
             return moved;
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // New "Review for Deletion" top-level folder methods
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Creates the "Review for Deletion" folder at the top level of the account store.
+    /// Returns true on success.
+    /// </summary>
+    public async Task<bool> EnsureReviewFolderAsync(string emailAddress, string storeName)
+    {
+        return await Task.Run(() =>
+        {
+            bool success = false;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    dynamic outlookApp = GetActiveComObject("Outlook.Application");
+                    dynamic session = outlookApp.GetNamespace("MAPI");
+                    session.Logon("", "", false, false);
+
+                    dynamic? targetStore = FindStore(session, emailAddress, storeName);
+                    if (targetStore is null) { _log.Warn("EnsureReviewFolder: Store not found"); return; }
+
+                    dynamic rootFolder = targetStore.GetRootFolder();
+                    dynamic folders = rootFolder.Folders;
+
+                    dynamic? reviewFolder = null;
+                    try { reviewFolder = folders[ReviewForDeletionFolderName]; } catch { }
+
+                    if (reviewFolder is null)
+                    {
+                        reviewFolder = folders.Add(ReviewForDeletionFolderName);
+                        _log.Info("Created top-level folder: {FolderName}", ReviewForDeletionFolderName);
+                    }
+
+                    success = true;
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Error ensuring Review for Deletion folder exists");
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(TimeSpan.FromSeconds(30));
+            return success;
+        });
+    }
+
+    /// <summary>
+    /// Takes a snapshot of all items in the top-level "Review for Deletion" folder.
+    /// </summary>
+    public async Task<List<FolderEmailSnapshot>> GetReviewFolderSnapshotAsync(
+        string emailAddress, string storeName, int maxItems = 1000)
+    {
+        return await Task.Run(() =>
+        {
+            var snapshot = new List<FolderEmailSnapshot>();
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    dynamic outlookApp = GetActiveComObject("Outlook.Application");
+                    dynamic session = outlookApp.GetNamespace("MAPI");
+                    session.Logon("", "", false, false);
+
+                    dynamic? targetStore = FindStore(session, emailAddress, storeName);
+                    if (targetStore is null) { _log.Warn("GetReviewSnapshot: Store not found"); return; }
+
+                    dynamic rootFolder = targetStore.GetRootFolder();
+                    dynamic reviewFolder = rootFolder.Folders[ReviewForDeletionFolderName];
+                    dynamic items = reviewFolder.Items;
+                    int itemCount = (int)items.Count;
+
+                    for (int i = 1; i <= itemCount && i <= maxItems; i++)
+                    {
+                        try
+                        {
+                            dynamic item = items[i];
+                            if ((int)item.Class != 43) continue;
+
+                            string senderEmail = "";
+                            try { senderEmail = (string)item.SenderEmailAddress; } catch { }
+                            try
+                            {
+                                if ((int)item.SenderEmailType == 0)
+                                {
+                                    dynamic sender = item.Sender;
+                                    if (sender != null)
+                                    {
+                                        dynamic pa = sender.PropertyAccessor;
+                                        senderEmail = (string)pa.GetProperty(
+                                            "http://schemas.microsoft.com/mapi/proptag/0x39FE001E");
+                                    }
+                                }
+                            }
+                            catch { }
+
+                            snapshot.Add(new FolderEmailSnapshot
+                            {
+                                EntryId = (string)item.EntryID,
+                                Subject = (string)(item.Subject ?? ""),
+                                SenderEmail = senderEmail?.ToLowerInvariant() ?? "",
+                                Domain = ExtractDomainFromEmail(senderEmail),
+                                ReceivedTime = (DateTime)item.ReceivedTime
+                            });
+                        }
+                        catch (Exception ex) { _log.Warn("ReviewSnapshot: skip item {Index}: {Error}", i, ex.Message); }
+                    }
+
+                    _log.Info("Review snapshot taken: {Count} items", snapshot.Count);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Error taking Review for Deletion snapshot");
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(TimeSpan.FromMinutes(2));
+            return snapshot;
+        });
+    }
+
+    /// <summary>
+    /// Bulk-moves emails (by EntryId) into the top-level "Review for Deletion" folder.
+    /// Returns count of successfully moved items.
+    /// </summary>
+    public async Task<int> BulkMoveToReviewFolderAsync(
+        List<string> entryIds, string emailAddress, string storeName,
+        IProgress<string>? progress = null)
+    {
+        return await Task.Run(() =>
+        {
+            int moved = 0;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    dynamic outlookApp = GetActiveComObject("Outlook.Application");
+                    dynamic session = outlookApp.GetNamespace("MAPI");
+                    session.Logon("", "", false, false);
+
+                    dynamic? targetStore = FindStore(session, emailAddress, storeName);
+                    if (targetStore is null) { _log.Warn("BulkMoveToReview: Store not found"); return; }
+
+                    dynamic rootFolder = targetStore.GetRootFolder();
+                    dynamic? reviewFolder = null;
+                    try { reviewFolder = rootFolder.Folders[ReviewForDeletionFolderName]; } catch { }
+                    if (reviewFolder is null) reviewFolder = rootFolder.Folders.Add(ReviewForDeletionFolderName);
+
+                    for (int i = 0; i < entryIds.Count; i++)
+                    {
+                        try
+                        {
+                            dynamic item = session.GetItemFromID(entryIds[i], targetStore.StoreID);
+                            item.Move(reviewFolder);
+                            moved++;
+                            if ((i + 1) % 10 == 0)
+                                progress?.Report($"Moving to review... {i + 1}/{entryIds.Count}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _log.Warn("BulkMoveToReview: skip item {Index}: {Error}", i, ex.Message);
+                        }
+                    }
+
+                    _log.Info("BulkMoveToReview complete: {Moved}/{Total}", moved, entryIds.Count);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Error during bulk move to Review for Deletion");
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(TimeSpan.FromMinutes(5));
+            return moved;
+        });
+    }
+
+    /// <summary>
+    /// Moves all remaining items from "Review for Deletion" back to Inbox.
+    /// Returns count of successfully moved items.
+    /// </summary>
+    public async Task<int> BulkMoveReviewToInboxAsync(
+        string emailAddress, string storeName, IProgress<string>? progress = null)
+    {
+        return await Task.Run(() =>
+        {
+            int moved = 0;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    dynamic outlookApp = GetActiveComObject("Outlook.Application");
+                    dynamic session = outlookApp.GetNamespace("MAPI");
+                    session.Logon("", "", false, false);
+
+                    dynamic? targetStore = FindStore(session, emailAddress, storeName);
+                    if (targetStore is null) return;
+
+                    dynamic rootFolder = targetStore.GetRootFolder();
+                    dynamic reviewFolder = rootFolder.Folders[ReviewForDeletionFolderName];
+                    dynamic inboxFolder = targetStore.GetDefaultFolder(OlFolderInbox);
+                    dynamic items = reviewFolder.Items;
+
+                    int count = (int)items.Count;
+                    // Move in reverse order — COM collections shift indices on removal
+                    for (int i = count; i >= 1; i--)
+                    {
+                        try
+                        {
+                            dynamic item = items[i];
+                            item.Move(inboxFolder);
+                            moved++;
+                            if (moved % 10 == 0)
+                                progress?.Report($"Returning to Inbox... {moved}/{count}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _log.Warn("ReviewToInbox: skip item {Index}: {Error}", i, ex.Message);
+                        }
+                    }
+
+                    _log.Info("ReviewToInbox complete: {Moved} items returned", moved);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Error moving Review for Deletion items to Inbox");
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(TimeSpan.FromMinutes(5));
+            return moved;
+        });
+    }
+
+    /// <summary>
+    /// Gets the count of items in the "Review for Deletion" folder.
+    /// Returns 0 if folder doesn't exist.
+    /// </summary>
+    public async Task<int> GetReviewFolderCountAsync(string emailAddress, string storeName)
+    {
+        return await Task.Run(() =>
+        {
+            int count = 0;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    dynamic outlookApp = GetActiveComObject("Outlook.Application");
+                    dynamic session = outlookApp.GetNamespace("MAPI");
+                    session.Logon("", "", false, false);
+
+                    dynamic? targetStore = FindStore(session, emailAddress, storeName);
+                    if (targetStore is null) return;
+
+                    dynamic rootFolder = targetStore.GetRootFolder();
+                    dynamic reviewFolder = rootFolder.Folders[ReviewForDeletionFolderName];
+                    count = (int)reviewFolder.Items.Count;
+                }
+                catch { /* folder may not exist yet — that's fine */ }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(TimeSpan.FromSeconds(15));
+            return count;
+        });
+    }
+
+    /// <summary>
+    /// Creates Outlook rules that move emails from the given sender addresses
+    /// to Deleted Items. Batches senders into rules (max 10 per rule) to stay
+    /// within Outlook's rule-size limits. Returns the number of rules created.
+    /// </summary>
+    public async Task<int> CreateSenderRulesAsync(
+        string emailAddress, string storeName,
+        List<string> senderAddresses,
+        IProgress<string>? progress = null)
+    {
+        return await Task.Run(() =>
+        {
+            int created = 0;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    dynamic outlookApp = GetActiveComObject("Outlook.Application");
+                    dynamic session = outlookApp.GetNamespace("MAPI");
+                    session.Logon("", "", false, false);
+
+                    dynamic? targetStore = FindStore(session, emailAddress, storeName);
+                    if (targetStore is null)
+                    {
+                        _log.Warn("CreateSenderRules: Store not found");
+                        return;
+                    }
+
+                    dynamic deletedFolder = targetStore.GetDefaultFolder(OlFolderDeletedItems);
+                    dynamic rules = targetStore.GetRules();
+
+                    // Collect existing MailZen rule names to avoid duplicates
+                    var existingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    int ruleCount = (int)rules.Count;
+                    for (int i = 1; i <= ruleCount; i++)
+                    {
+                        try
+                        {
+                            string name = (string)(rules[i].Name ?? "");
+                            if (name.StartsWith("MailZen:", StringComparison.OrdinalIgnoreCase))
+                                existingNames.Add(name);
+                        }
+                        catch { }
+                    }
+
+                    // Deduplicate and batch senders (max 10 per rule)
+                    var uniqueSenders = senderAddresses
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    const int batchSize = 10;
+                    int batchIndex = 0;
+
+                    for (int start = 0; start < uniqueSenders.Count; start += batchSize)
+                    {
+                        var batch = uniqueSenders.Skip(start).Take(batchSize).ToArray();
+                        batchIndex++;
+
+                        // Generate a unique rule name
+                        var ruleName = batch.Length == 1
+                            ? $"MailZen: {batch[0]}"
+                            : $"MailZen: auto-delete batch {batchIndex} ({batch.Length} senders)";
+
+                        int suffix = 1;
+                        var baseName = ruleName;
+                        while (existingNames.Contains(ruleName))
+                            ruleName = $"{baseName} #{suffix++}";
+
+                        try
+                        {
+                            // Create a receive rule
+                            dynamic rule = rules.Create(ruleName, olRuleReceive);
+
+                            // Condition: sender address matches
+                            dynamic senderCondition = rule.Conditions.SenderAddress;
+                            senderCondition.Address = batch;
+                            senderCondition.Enabled = true;
+
+                            // Action: move to Deleted Items
+                            dynamic moveAction = rule.Actions.MoveToFolder;
+                            moveAction.Folder = deletedFolder;
+                            moveAction.Enabled = true;
+
+                            rule.Enabled = true;
+                            created++;
+                            existingNames.Add(ruleName);
+
+                            progress?.Report($"Created rule: {ruleName}");
+                            _log.Info("Created Outlook rule [{Name}] for {Count} senders",
+                                ruleName, batch.Length);
+                        }
+                        catch (Exception ex)
+                        {
+                            _log.Warn("Failed to create rule [{Name}]: {Error}",
+                                ruleName, ex.Message);
+                        }
+                    }
+
+                    // Persist all rules to Outlook
+                    if (created > 0)
+                    {
+                        rules.Save();
+                        _log.Info("Saved {Count} new Outlook rules", created);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Error creating Outlook sender rules");
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(TimeSpan.FromMinutes(2));
+            return created;
         });
     }
 

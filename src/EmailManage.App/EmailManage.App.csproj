@@ -6,9 +6,17 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <AssemblyName>EmailManage</AssemblyName>
+    <AssemblyName>MailZen</AssemblyName>
     <RootNamespace>EmailManage</RootNamespace>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+    <!-- App metadata -->
+    <Product>MailZen</Product>
+    <Description>Smart Email Cleanup — AI-powered Outlook companion</Description>
+    <Company>MailZen</Company>
+    <Copyright>Copyright © 2026</Copyright>
+    <Version>1.0.0</Version>
+    <ApplicationIcon>Resources\mailzen.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
