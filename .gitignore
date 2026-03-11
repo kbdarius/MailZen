@@ -5,6 +5,12 @@ publish/
 MailZen.exe
 Docs/*.html
 
+# Dataset exports
+MailZen_Master_Dataset.csv
+MailZen_Master_Dataset.xlsx
+*_Dataset.csv
+*_Dataset.xlsx
+
 # IDE
 .vs/
 *.user
