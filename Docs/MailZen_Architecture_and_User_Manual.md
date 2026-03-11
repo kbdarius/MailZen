@@ -104,6 +104,7 @@ Top-level:
 - `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.2.0`).
 - `MailZen.bat`: Build-and-run helper that publishes a fresh root `MailZen.exe`.
 - `Docs/`: Product documentation.
+- `MailZen.wiki`: Companion GitHub wiki repo for quick-start project pages that must stay aligned with this manual.
 
 Important app files:
 - `src/EmailManage.App/App.xaml`: Resource dictionary and converters.
@@ -383,8 +384,9 @@ For each release:
 1. Update `<Version>` in `src/EmailManage.App/EmailManage.App.csproj`.
 2. Verify header version shows in app title area and status bar.
 3. Update this document header (`Software Version`, `Document Version`, date).
-4. Publish and smoke test.
-5. Tag release in git.
+4. Update the GitHub wiki pages affected by the release.
+5. Publish and smoke test.
+6. Tag release in git.
 
 Recommended semantic versioning:
 - Patch: bug fix, no behavior contract break (`1.1.1 -> 1.1.2`)
