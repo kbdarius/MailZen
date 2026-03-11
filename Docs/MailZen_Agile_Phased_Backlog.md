@@ -1,5 +1,16 @@
 # MailZen Agile Phased Backlog (Redesign)
 
+**Version:** 1.1.1 — 2026-03-10
+
+### Release Notes (v1.1.1)
+- Added: "Categories" column to the dataset extraction and Excel report.
+- Fixed: UI text wrapping for the categories checkbox.
+
+### Release Notes (v1.1.0)
+- Added: "Score Existing Dataset" feature — score previously exported CSV/XLSX without re-extracting from Outlook.
+- Added: Sender scoring (JunkScore, SenderReputation) and Recommendation column; optional Outlook color-category application.
+- Docs: Updated user-journey and backlog to reflect scoring + feedback-loop changes.
+
 Date: 2026-02-26
 Project Mode: Agile, feedback-gated delivery
 

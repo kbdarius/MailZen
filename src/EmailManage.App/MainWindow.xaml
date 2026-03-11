@@ -6,7 +6,7 @@
         xmlns:vm="clr-namespace:EmailManage.ViewModels"
         mc:Ignorable="d"
         Title="{Binding AppTitle}"
-        Height="720" Width="860" MinHeight="600" MinWidth="700"
+        Height="900" Width="860" MinHeight="600" MinWidth="700"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BackgroundBrush}"
         Loaded="Window_Loaded"
@@ -39,6 +39,8 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="✨" FontSize="24" Margin="0,0,10,0" VerticalAlignment="Center"/>
                     <TextBlock Text="MailZen" FontSize="22" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding AppVersion, StringFormat=' (v{0})'}" FontSize="12" Foreground="#EDE9FE"
+                               VerticalAlignment="Center" Margin="6,3,0,0" FontWeight="SemiBold"/>
                     <TextBlock Text="Smart Email Cleanup" FontSize="12" Foreground="#D1C4E9" VerticalAlignment="Center" Margin="14,3,0,0"
                                FontStyle="Italic" Opacity="0.85"/>
                 </StackPanel>
@@ -60,7 +62,10 @@
         </Border>
 
         <!-- ═══ MAIN CONTENT ═══ -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0">
+        <TabControl Grid.Row="1" BorderThickness="0" Background="Transparent" Margin="0,8,0,0"
+                SelectedIndex="{Binding SelectedMainTabIndex}">
+            <TabItem Header="Cleanup Wizard" FontSize="16" FontWeight="SemiBold">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0">
             <Grid Margin="40,28,40,16">
 
                 <!-- ═══ SETTINGS OVERLAY (shown when gear is clicked) ═══ -->
@@ -78,6 +83,12 @@
                                     Foreground="{StaticResource TextSecondaryBrush}" Cursor="Hand" Margin="20,0,0,0"
                                     Command="{Binding ToggleSettingsCommand}" VerticalAlignment="Center"/>
                         </StackPanel>
+
+                        <TabControl BorderThickness="0" Background="Transparent">
+                            <!-- ═══ TAB 1: General Settings ═══ -->
+                            <TabItem Header="⚙ General" FontSize="13">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="0,12,0,0">
 
                         <!-- ═══ AI Model Section ═══ -->
                         <TextBlock Text="🤖 AI Engine (Ollama)" FontSize="14" FontWeight="SemiBold"
@@ -194,6 +205,174 @@
                         <Button Content="📂 Open Log Folder" Style="{StaticResource SecondaryButton}"
                                 Command="{Binding ExportLogsCommand}" HorizontalAlignment="Left"
                                 ToolTip="Opens the log folder in File Explorer for sharing or review."/>
+
+                        <!-- Separator -->
+                        <Border Height="1" Background="#E5E7EB" Margin="0,16,0,16"/>
+
+                        <!-- ═══ Clear MailZen Categories ═══ -->
+                        <TextBlock Text="🗂 Clear MailZen Categories — Inbox" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Removes MailZen: Keep / Review / Delete tags from ALL emails in each selected account's Inbox. Does not move or delete anything."
+                                   TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+
+                        <TextBlock Text="Apply to accounts:" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <ItemsControl ItemsSource="{Binding InboxCleanupAccounts}" Margin="0,0,0,12">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsChecked}" Margin="0,3">
+                                        <TextBlock Text="{Binding Name}" FontSize="12"/>
+                                    </CheckBox>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <CheckBox Content="Also remove MailZen view formatting rules (color stripes)"
+                                  IsChecked="{Binding ClearInboxAlsoRemoveFormatting}"
+                                  FontSize="12" Margin="0,0,0,12"/>
+
+                        <Button Content="🗑 Clear MailZen Categories from Inbox" Style="{StaticResource SecondaryButton}"
+                                Command="{Binding ClearInboxCategoriesCommand}" HorizontalAlignment="Left"
+                                ToolTip="Wipes MailZen: category tags from every email in the selected accounts' Inbox."/>
+
+                        <TextBlock Text="{Binding ClearInboxCategoriesResult}" FontSize="12" Margin="0,8,0,0"
+                                   Foreground="#2E7D32" TextWrapping="Wrap"
+                                   Visibility="{Binding ClearInboxCategoriesResult, Converter={StaticResource NullToCollapsedConverter}}"/>
+
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </TabItem>
+
+                            <!-- ═══ TAB 2: Color Coding Test ═══ -->
+                            <TabItem Header="🎨 Color Test" FontSize="13">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="0,12,0,0">
+
+                        <TextBlock Text="Test Color Coding" FontSize="16" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="Verify that MailZen color coding works on your email accounts. Select accounts, load a preview, then run the test."
+                                   TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,16"/>
+
+                        <!-- Account checkboxes -->
+                        <TextBlock Text="Select Accounts to Test:" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                        <ItemsControl ItemsSource="{Binding ColorTestAccounts}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsChecked}" Margin="0,3">
+                                        <TextBlock Text="{Binding Name}" FontSize="13"/>
+                                    </CheckBox>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Load Preview button -->
+                        <Button Content="🔍 Load Email Preview" Command="{Binding LoadColorTestPreviewCommand}"
+                                Height="34" Margin="0,12,0,0" HorizontalAlignment="Left" Padding="16,0"
+                                Background="#1565C0" Foreground="White" FontWeight="SemiBold"
+                                IsEnabled="{Binding IsColorTestRunning, Converter={StaticResource InverseBoolConverter}}"/>
+
+                        <!-- Loading indicator -->
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
+                                    Visibility="{Binding IsColorTestRunning, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="⏳" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ColorTestStatus}" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- Email preview list -->
+                        <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="8" Margin="0,12,0,0"
+                                Visibility="{Binding ColorTestPreviewLoaded, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl ItemsSource="{Binding ColorTestEmails}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="10,8" BorderBrush="#F0F0F0" BorderThickness="0,0,0,1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="6"/>
+                                                    <ColumnDefinition Width="190"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Color indicator bar -->
+                                                <Border Grid.Column="0" CornerRadius="3" Margin="0,0,10,0"
+                                                        Background="{Binding DisplayColor, Converter={StaticResource StringToColorBrushConverter}}"/>
+
+                                                <!-- Account -->
+                                                <TextBlock Grid.Column="1" Text="{Binding AccountName}" FontSize="11"
+                                                           Foreground="#455A64" FontWeight="SemiBold"
+                                                           VerticalAlignment="Center" Margin="10,0,10,0"
+                                                           TextTrimming="CharacterEllipsis"/>
+
+                                                <!-- Email info -->
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock FontSize="12" FontWeight="Bold"
+                                                               Foreground="{Binding DisplayColor, Converter={StaticResource StringToColorBrushConverter}}">
+                                                        <TextBlock.Text>
+                                                            <MultiBinding StringFormat="{}{0}">
+                                                                <Binding Path="Sender"/>
+                                                            </MultiBinding>
+                                                        </TextBlock.Text>
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding SubjectSnippet}" FontSize="11"
+                                                               Foreground="#666" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Category}" FontSize="10" FontWeight="SemiBold"
+                                                               Foreground="{Binding DisplayColor, Converter={StaticResource StringToColorBrushConverter}}"
+                                                               Margin="0,2,0,0"/>
+                                                </StackPanel>
+
+                                                <!-- Date -->
+                                                <TextBlock Grid.Column="3" Text="{Binding ReceivedDate}" FontSize="10"
+                                                           Foreground="#999" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+
+                        <!-- Status text (when not running) -->
+                        <TextBlock Text="{Binding ColorTestStatus}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                   FontSize="12" Foreground="#666"
+                                   Visibility="{Binding IsColorTestRunning, Converter={StaticResource InverseBoolToVisConverter}}"/>
+
+                        <!-- Run Test button -->
+                        <Button Content="▶ Run Color Coding Test" Command="{Binding RunColorTestCommand}"
+                                Height="36" Margin="0,12,0,0" HorizontalAlignment="Left" Padding="20,0"
+                                Background="#E65100" Foreground="White" FontWeight="Bold"
+                                Visibility="{Binding ColorTestPreviewLoaded, Converter={StaticResource BoolToVis}}"
+                                IsEnabled="{Binding IsColorTestRunning, Converter={StaticResource InverseBoolConverter}}"
+                                ToolTip="Apply categories and conditional formatting to the previewed emails."/>
+
+                        <!-- Post-test confirmation -->
+                        <Border Background="#E8F5E9" CornerRadius="8" Padding="16,12" Margin="0,12,0,0"
+                                Visibility="{Binding ColorTestCompleted, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Text="✅ Test Applied!" FontSize="14" FontWeight="Bold" Foreground="#2E7D32" Margin="0,0,0,6"/>
+                                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="#424242">
+                                    Open your Inbox in Outlook and check if the tested emails show colored text:
+                                </TextBlock>
+                                <StackPanel Margin="8,6,0,0">
+                                    <TextBlock Text="• RED bold = MailZen: Delete" Foreground="#D32F2F" FontWeight="Bold" FontSize="12"/>
+                                    <TextBlock Text="• ORANGE bold = MailZen: Review" Foreground="#E65100" FontWeight="Bold" FontSize="12"/>
+                                    <TextBlock Text="• GREEN bold = MailZen: Keep" Foreground="#2E7D32" FontWeight="Bold" FontSize="12"/>
+                                </StackPanel>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#666" Margin="0,8,0,0">
+                                    If the colors appear correctly, MailZen is fully compatible with your setup.
+                                </TextBlock>
+
+                                <Button Content="🗑 Clean Up Test Categories" Command="{Binding CleanUpColorTestCommand}"
+                                        Height="30" Margin="0,10,0,0" HorizontalAlignment="Left" Padding="14,0"
+                                        Background="#757575" Foreground="White" FontWeight="SemiBold" FontSize="11"
+                                        IsEnabled="{Binding IsColorTestRunning, Converter={StaticResource InverseBoolConverter}}"
+                                        ToolTip="Remove all MailZen test categories from the previewed emails."/>
+                            </StackPanel>
+                        </Border>
+
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </TabItem>
+                        </TabControl>
                     </StackPanel>
                 </Border>
 
@@ -611,7 +790,135 @@
 
                 </StackPanel>
             </Grid>
-        </ScrollViewer>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Dataset Builder" FontSize="16" FontWeight="SemiBold">
+                <Grid Margin="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="320"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Left: Configuration -->
+                    <Border Grid.Column="0" Background="White" CornerRadius="8" Padding="20" Margin="0,0,20,0">
+                         <StackPanel>
+                            <DockPanel Margin="0,0,0,8" LastChildFill="False">
+                                <TextBlock Text="1. Select Accounts" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                                <CheckBox Content="Select All" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                          IsChecked="True"
+                                          Command="{Binding ToggleSelectAllCommand}"
+                                          CommandParameter="{Binding IsChecked, RelativeSource={RelativeSource Self}}"/>
+                            </DockPanel>
+                            
+                            <ListBox ItemsSource="{Binding AvailableAccounts}" Height="350" BorderThickness="1" BorderBrush="#E0E0E0" Margin="0,0,0,16">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="5"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <TextBlock Text="2. Select Folders" FontWeight="Bold" Margin="0,0,0,8" FontSize="14"/>
+                            <StackPanel Margin="5,0,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <CheckBox Content="Inbox" IsChecked="{Binding DatasetIncludeInbox}" Margin="0,4"/>
+                                    <!-- Options specifically for Inbox -->
+                                    <CheckBox Content="Include Unread?" IsChecked="{Binding DatasetIncludeUnread}" 
+                                              Margin="15,4,0,0" FontSize="11" Foreground="#666" 
+                                              ToolTip="If unchecked, only READ emails are extracted from Inbox."
+                                              IsEnabled="{Binding DatasetIncludeInbox}"/>
+                                </StackPanel>
+                                
+                                <CheckBox Content="Sent Items" IsChecked="{Binding DatasetIncludeSent}" Margin="0,4"/>
+                                <CheckBox Content="Deleted Items" IsChecked="{Binding DatasetIncludeDeleted}" Margin="0,4"/>
+                            </StackPanel>
+                            
+                            <!-- 3. Options removed/empty now? Or keep Date Range here -->
+                            <TextBlock Text="3. Date Range" FontWeight="Bold" Margin="0,16,0,8" FontSize="14"/>
+                            <StackPanel Orientation="Horizontal" Margin="5,0,0,0">
+                                <DatePicker SelectedDate="{Binding DatasetStartDate}" Width="110"/>
+                                <TextBlock Text=" to " VerticalAlignment="Center" Margin="5,0"/>
+                                <DatePicker SelectedDate="{Binding DatasetEndDate}" Width="110"/>
+                            </StackPanel>
+
+                            <TextBlock Text="4. Options" FontWeight="Bold" Margin="0,16,0,8" FontSize="14"/>
+                            <CheckBox IsChecked="{Binding ApplyOutlookCategories}" 
+                                      Margin="5,4,0,0"
+                                      ToolTip="After scoring, labels each email in Outlook with MailZen: Keep (Green), Review (Yellow), or Delete (Red).">
+                                <TextBlock Text="Apply color categories in Outlook" TextWrapping="Wrap" />
+                            </CheckBox>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Right: Status & Actions -->
+                    <StackPanel Grid.Column="1">
+                        <Border Background="#F5F7FA" CornerRadius="8" Padding="20" Margin="0,0,0,20">
+                            <StackPanel>
+                                <TextBlock Text="Dataset Builder" FontSize="18" FontWeight="Bold" Foreground="#333" Margin="0,0,0,6"/>
+                                <TextBlock Text="Extract emails from Outlook and score them, or re-score a previously exported CSV."
+                                           TextWrapping="Wrap" Foreground="#666" Margin="0,0,0,16"/>
+
+                                <!-- Mode -->
+                                <TextBlock Text="Mode:" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                    <RadioButton Content="Extract from Outlook" IsChecked="{Binding DatasetModeIsExtract}"
+                                                 Margin="0,0,20,0" FontSize="13" VerticalAlignment="Center"/>
+                                    <RadioButton Content="Re-score existing CSV"
+                                                 IsChecked="{Binding DatasetModeIsExtract, Converter={StaticResource InverseBoolConverter}}"
+                                                 FontSize="13" VerticalAlignment="Center"/>
+                                </StackPanel>
+
+                                <!-- Browse CSV row (Re-score mode only) -->
+                                <StackPanel Visibility="{Binding DatasetModeIsExtract, Converter={StaticResource InverseBoolToVisConverter}}"
+                                            Margin="0,0,0,12">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Button Content="📂 Browse CSV" Command="{Binding BrowseDatasetCommand}"
+                                                Width="120" Height="32" Background="#1565C0" Foreground="White" FontWeight="SemiBold"
+                                                IsEnabled="{Binding IsDatasetRunning, Converter={StaticResource InverseBoolConverter}}"/>
+                                        <TextBlock Text="{Binding ScoreDatasetPath}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                                   FontSize="11" Foreground="#555" TextTrimming="CharacterEllipsis" MaxWidth="260"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding ScoreDatasetValidation}" FontSize="12" Foreground="#333" TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <!-- Output format -->
+                                <TextBlock Text="Output:" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                <CheckBox Content="Also save XLSX workbook (3-sheet report)" IsChecked="{Binding DatasetSaveXlsx}"
+                                          Margin="0,0,0,16" FontSize="12"/>
+
+                                <!-- Action buttons -->
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="▶ Run Dataset Builder" Command="{Binding RunDatasetCommand}"
+                                            Width="168" Height="40" Background="#4CAF50" Foreground="White" FontWeight="Bold"
+                                            IsEnabled="{Binding IsDatasetRunning, Converter={StaticResource InverseBoolConverter}}"/>
+                                    <Button Content="Cancel" Command="{Binding CancelDatasetCommand}"
+                                            Width="100" Height="40" Margin="10,0,0,0" Background="#F44336" Foreground="White"
+                                            Visibility="{Binding IsDatasetRunning, Converter={StaticResource BoolToVis}}"/>
+                                    <Button Content="💾 Save Defaults" Command="{Binding SaveDatasetDefaultsCommand}"
+                                            Width="130" Height="40" Margin="10,0,0,0"
+                                            Background="#7C4DFF" Foreground="White" FontWeight="SemiBold"
+                                            ToolTip="Save current account selections, folder choices, and date range as your defaults."
+                                            IsEnabled="{Binding IsDatasetRunning, Converter={StaticResource InverseBoolConverter}}"/>
+                                </StackPanel>
+
+                                <ProgressBar IsIndeterminate="True" Height="4" Margin="0,15,0,0"
+                                             Visibility="{Binding IsDatasetRunning, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="White" CornerRadius="8" Padding="20">
+                             <StackPanel>
+                                <TextBlock Text="Status Log" FontWeight="Bold" Margin="0,0,0,10"/>
+                                <ScrollViewer Height="150" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock Text="{Binding DatasetStatus}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"/>
+                                </ScrollViewer>
+                             </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+        </TabControl>
 
         <!-- ═══ STATUS BAR ═══ -->
         <Border Grid.Row="2" Padding="20,8">
@@ -628,7 +935,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{Binding StatusBarText}"
                            FontSize="11" Foreground="#A0A3BD" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Text="✨ MailZen v1.0"
+                <TextBlock Grid.Column="1" Text="{Binding AppVersion, StringFormat='✨ MailZen v{0}'}"
                            FontSize="10" Foreground="#6B7290" VerticalAlignment="Center"/>
             </Grid>
         </Border>

@@ -17,6 +17,9 @@ public sealed class OutlookAccountInfo
     /// <summary>File path to the store (.ost / .pst) if available.</summary>
     public string StoreFilePath { get; init; } = string.Empty;
 
+    /// <summary>Unique Store ID for accessing specific stores in Sandbox.</summary>
+    public string StoreID { get; set; } = string.Empty;
+
     /// <summary>Provider hint: "Exchange", "IMAP", "POP3", "Outlook.com", "Unknown".</summary>
     public string ProviderHint { get; init; } = "Unknown";
 
@@ -34,6 +37,8 @@ public sealed class OutlookAccountInfo
 
     /// <summary>Whether a pattern file already exists for this account.</summary>
     public bool HasPatternFile { get; set; }
+
+    /// <summary>Unique store ID (EntryID).</summary>
 
     private static string SanitizeKey(string email)
     {

@@ -15,11 +15,12 @@
     <Description>Smart Email Cleanup — AI-powered Outlook companion</Description>
     <Company>MailZen</Company>
     <Copyright>Copyright © 2026</Copyright>
-    <Version>1.0.0</Version>
+    <Version>1.1.1</Version>
     <ApplicationIcon>Resources\mailzen.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Serilog" Version="4.2.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
