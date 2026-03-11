@@ -5,8 +5,6 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmailManage.App", "EmailManage.App\EmailManage.App.csproj", "{762694BD-F64E-4F78-886C-D5DB48DD5E7F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MailZen.DataHarvester", "..\sandbox\MailZen.DataHarvester\MailZen.DataHarvester.csproj", "{6479F02A-2CE0-46E0-9E1E-0E8E64300331}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,9 +18,5 @@ Global
 		{762694BD-F64E-4F78-886C-D5DB48DD5E7F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{762694BD-F64E-4F78-886C-D5DB48DD5E7F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{762694BD-F64E-4F78-886C-D5DB48DD5E7F}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6479F02A-2CE0-46E0-9E1E-0E8E64300331}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6479F02A-2CE0-46E0-9E1E-0E8E64300331}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6479F02A-2CE0-46E0-9E1E-0E8E64300331}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6479F02A-2CE0-46E0-9E1E-0E8E64300331}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

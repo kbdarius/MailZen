@@ -2,6 +2,8 @@
 **/bin/
 **/obj/
 publish/
+MailZen.exe
+Docs/*.html
 
 # IDE
 .vs/

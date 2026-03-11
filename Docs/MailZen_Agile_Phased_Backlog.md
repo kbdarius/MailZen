@@ -1,6 +1,11 @@
 # MailZen Agile Phased Backlog (Redesign)
 
-**Version:** 1.1.1 — 2026-03-10
+**Version:** 1.1.2 — 2026-03-11
+
+### Release Notes (v1.1.2)
+- Added: Main window now remembers last size, position, and maximized state per user.
+- Changed: Dataset Builder inbox option is now `Include Read?`, defaulting to unread-focused extraction.
+- Changed: `MailZen.bat` now publishes a fresh single-file Release build and copies `MailZen.exe` to the repository root.
 
 ### Release Notes (v1.1.1)
 - Added: "Categories" column to the dataset extraction and Excel report.

@@ -2,8 +2,8 @@
 
 ## Document Control
 - Product: MailZen
-- Software Version: `1.1.1`
-- Document Version: `1.1.1`
+- Software Version: `1.1.2`
+- Document Version: `1.1.2`
 - Last Updated: `2026-03-11`
 - Repository Path: `src/EmailManage.App`
 
@@ -97,8 +97,8 @@ flowchart TB
 ## 4. Repository and File Map
 Top-level:
 - `src/EmailManage.sln`: Solution entry.
-- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.1.1`).
-- `MailZen.bat`: Launch helper.
+- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.1.2`).
+- `MailZen.bat`: Build-and-run helper that publishes a fresh root `MailZen.exe`.
 - `Docs/`: Product documentation.
 
 Important app files:
@@ -128,12 +128,13 @@ Models:
 
 ## 5. Runtime Lifecycle
 1. `App.OnStartup` initializes logger, hooks unhandled exception handlers, shows `MainWindow`.
-2. `MainWindow` constructs `MainViewModel`.
+2. `MainWindow` restores saved window size/position/maximized state from local storage and constructs `MainViewModel`.
 3. `Window_Loaded` calls `MainViewModel.InitializeAsync()`.
 4. ViewModel connects to Outlook and hydrates account-dependent UI collections.
 5. User executes workflow commands (learn/triage/review/dataset/settings utilities).
-6. `Window_Closed` calls `MainViewModel.Cleanup()`.
-7. `App.OnExit` flushes logger.
+6. `Window_Closing` persists the current window layout.
+7. `Window_Closed` calls `MainViewModel.Cleanup()`.
+8. `App.OnExit` flushes logger.
 
 Error capture:
 - Unhandled UI exceptions: `DispatcherUnhandledException` -> `crash.log` + dialog.
@@ -204,6 +205,9 @@ flowchart TD
     B -->|No| D[ScoreExistingDataset]
     C --> E[Collect emails + sender stats]
     D --> F[Load/validate CSV + rescore]
+    E --> E1{Inbox read mail included?}
+    E1 -->|No| E2[Unread inbox only]
+    E1 -->|Yes| E3[Read and unread inbox]
     E --> G[Compute sender reputation + junk score]
     F --> G
     G --> H{ApplyOutlookCategories?}
@@ -236,7 +240,8 @@ flowchart TD
 - Logs: `%LOCALAPPDATA%\EmailManage\diagnostic.log` (rolling daily, keep 14 files)
 - Crash log: `%LOCALAPPDATA%\EmailManage\crash.log`
 - Learned profile: `%LOCALAPPDATA%\EmailManage\accounts\<accountKey>\learned_profile.json`
-- Dataset defaults: `%LOCALAPPDATA%\EmailManage\dataset_settings.json` (via `MainViewModel`)
+- Dataset defaults: `%LOCALAPPDATA%\EmailManage\dataset_defaults.json`
+- Window layout: `%LOCALAPPDATA%\EmailManage\window_state.json`
 
 ### 7.2 LearnedProfile Schema
 `LearnedProfile` fields:
@@ -330,10 +335,18 @@ If you need to change X, start in Y:
 
 ## 13. Build, Release, and Versioning Process
 ### 13.1 Build/Publish
-Example publish command:
-```powershell
-dotnet publish src/EmailManage.App/EmailManage.App.csproj -c Release -o bin/Release/Publish
+Preferred local build-and-run command:
+```bat
+MailZen.bat
 ```
+
+Equivalent publish command:
+```powershell
+dotnet publish src/EmailManage.App/EmailManage.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o bin/Release/single-file
+```
+
+Result:
+- Published single-file executable is copied to repository root as `MailZen.exe`.
 
 ### 13.2 Release Version Bump Checklist
 For each release:
@@ -361,6 +374,7 @@ Recommended semantic versioning:
 2. Wait for connection status to become connected.
 3. Open settings (gear) and verify AI status.
 4. If AI is not ready, click install/setup controls in Settings > General.
+5. On later launches, the main window reopens with the same size, position, and maximized state the user last used.
 
 ### 14.3 Cleanup Wizard Flow
 1. Connect account and let MailZen learn from Deleted Items.
@@ -371,9 +385,10 @@ Recommended semantic versioning:
 ### 14.4 Dataset Builder
 Mode A: Extract from Outlook
 1. Select accounts/folders/date range.
-2. Optional: apply Outlook categories.
-3. Optional: enable XLSX output.
-4. Click `Run Dataset Builder`.
+2. For Inbox extraction, leave `Include Read?` unchecked to focus on unread mail only, or check it to include read inbox mail too.
+3. Optional: apply Outlook categories.
+4. Optional: enable XLSX output.
+5. Click `Run Dataset Builder`.
 
 Mode B: Re-score existing CSV
 1. Switch mode to `Re-score existing CSV`.

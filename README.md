@@ -10,12 +10,13 @@ MailZen is a companion tool that watches how you handle email, learns your patte
 
 **Double-click `MailZen.bat`** in the project root. That's it.
 
-This launches the debug build at `src\EmailManage.App\bin\Debug\net8.0-windows\MailZen.exe`.  
+`MailZen.bat` now runs a release publish and copies the final executable to `MailZen.exe` in the repository root.  
+Then it launches that root executable.  
 Requires: .NET 8 SDK installed locally and Outlook Desktop running.
 
 > If the app doesn't start, rebuild first:
 > ```
-> dotnet build src\EmailManage.sln -c Debug
+> dotnet publish src\EmailManage.App\EmailManage.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 > ```
 
 ---
@@ -57,7 +58,7 @@ No .NET installation required.
 
 | File | Purpose |
 |------|---------|
-| `MailZen.bat` | Quick-launch shortcut for development. Double-click to run the debug build. |
+| `MailZen.bat` | Build-and-run script. Publishes Release single-file output and copies `MailZen.exe` to repo root before launching. |
 | `build-installer.ps1` | Build & package script. Publishes the app as self-contained (no .NET needed) and optionally compiles an InnoSetup installer. Run this when you want to create a distributable. |
 | `installer\MailZen.iss` | [Inno Setup](https://jrsoftware.org/isinfo.php) installer script. Defines the Windows installer wizard — app name, icon, Start Menu shortcuts, desktop shortcut, Outlook detection warning. Used automatically by `build-installer.ps1`. |
 | `src\` | C# / WPF source code (.NET 8, CommunityToolkit.Mvvm). |

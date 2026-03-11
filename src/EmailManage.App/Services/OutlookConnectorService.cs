@@ -1959,7 +1959,7 @@ public sealed class OutlookConnectorService : IDisposable
         bool includeInbox,
         bool includeSent,
         bool includeDeleted,
-        bool includeUnread,
+        bool includeRead,
         bool applyOutlookCategories,
         bool saveXlsx,
         string outputFilePath,
@@ -2149,9 +2149,9 @@ public sealed class OutlookConnectorService : IDisposable
                                         try { isUnread = mail.UnRead; } catch {}
 
                                         bool isInbox = folderName.Equals("Inbox", StringComparison.OrdinalIgnoreCase);
-                                        if (isInbox && isUnread && !includeUnread)
+                                        if (isInbox && !isUnread && !includeRead)
                                         {
-                                            // Skip unread in Inbox if user unchecked it
+                                            // Skip read Inbox items unless user opts in to include them.
                                         }
                                         else
                                         {

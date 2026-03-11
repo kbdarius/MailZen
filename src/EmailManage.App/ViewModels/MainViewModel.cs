@@ -871,7 +871,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _datasetIncludeInbox = true;
     [ObservableProperty] private bool _datasetIncludeSent = false;
     [ObservableProperty] private bool _datasetIncludeDeleted = false;
-    [ObservableProperty] private bool _datasetIncludeUnread = true;
+    [ObservableProperty] private bool _datasetIncludeRead = false;
     [ObservableProperty] private bool _applyOutlookCategories = false;
     [ObservableProperty] private string _datasetStatus = "Ready to start.";
     [ObservableProperty] private bool _isDatasetRunning = false;
@@ -921,7 +921,7 @@ public partial class MainViewModel : ObservableObject
                 DatasetIncludeInbox,
                 DatasetIncludeSent,
                 DatasetIncludeDeleted,
-                DatasetIncludeUnread,
+                DatasetIncludeRead,
                 ApplyOutlookCategories,
                 DatasetSaveXlsx,
                 path,
@@ -1335,7 +1335,7 @@ public partial class MainViewModel : ObservableObject
                 IncludeInbox = DatasetIncludeInbox,
                 IncludeSent = DatasetIncludeSent,
                 IncludeDeleted = DatasetIncludeDeleted,
-                IncludeUnread = DatasetIncludeUnread,
+                IncludeRead = DatasetIncludeRead,
                 ApplyOutlookCategories = ApplyOutlookCategories,
                 StartMonthsAgo = (int)Math.Round((DateTime.Today - DatasetStartDate).TotalDays / 30.0),
                 SelectedAccountNames = AvailableAccounts.Where(a => a.IsSelected).Select(a => a.Name).ToList()
@@ -1370,7 +1370,8 @@ public partial class MainViewModel : ObservableObject
             DatasetIncludeInbox = settings.IncludeInbox;
             DatasetIncludeSent = settings.IncludeSent;
             DatasetIncludeDeleted = settings.IncludeDeleted;
-            DatasetIncludeUnread = settings.IncludeUnread;
+            // New behavior: default to unread-only inbox scan unless user opts into read mail.
+            DatasetIncludeRead = settings.IncludeRead ?? false;
             ApplyOutlookCategories = settings.ApplyOutlookCategories;
 
             if (settings.StartMonthsAgo > 0)
@@ -1424,7 +1425,7 @@ public class DatasetSettings
     public bool IncludeInbox { get; set; } = true;
     public bool IncludeSent { get; set; }
     public bool IncludeDeleted { get; set; }
-    public bool IncludeUnread { get; set; } = true;
+    public bool? IncludeRead { get; set; }
     public bool ApplyOutlookCategories { get; set; }
     public int StartMonthsAgo { get; set; } = 6;
     public List<string> SelectedAccountNames { get; set; } = new();

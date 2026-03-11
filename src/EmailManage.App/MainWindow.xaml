@@ -10,6 +10,7 @@
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BackgroundBrush}"
         Loaded="Window_Loaded"
+        Closing="Window_Closing"
         Closed="Window_Closed">
 
     <Grid>
@@ -824,9 +825,9 @@
                                 <StackPanel Orientation="Horizontal">
                                     <CheckBox Content="Inbox" IsChecked="{Binding DatasetIncludeInbox}" Margin="0,4"/>
                                     <!-- Options specifically for Inbox -->
-                                    <CheckBox Content="Include Unread?" IsChecked="{Binding DatasetIncludeUnread}" 
+                                    <CheckBox Content="Include Read?" IsChecked="{Binding DatasetIncludeRead}" 
                                               Margin="15,4,0,0" FontSize="11" Foreground="#666" 
-                                              ToolTip="If unchecked, only READ emails are extracted from Inbox."
+                                              ToolTip="If unchecked, only UNREAD emails are extracted from Inbox."
                                               IsEnabled="{Binding DatasetIncludeInbox}"/>
                                 </StackPanel>
                                 
