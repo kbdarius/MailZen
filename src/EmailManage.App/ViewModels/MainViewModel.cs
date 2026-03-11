@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows; // For MessageBox
@@ -63,7 +64,7 @@ public partial class MainViewModel : ObservableObject
 
     // ── Settings flyout ──
     [ObservableProperty] private bool _showSettings;
-    [ObservableProperty] private int _selectedMainTabIndex;
+    [ObservableProperty] private int _selectedMainTabIndex = 1;
 
     // ── Step 2: Learn ──
     [ObservableProperty] private bool _isLearning;
@@ -627,8 +628,8 @@ public partial class MainViewModel : ObservableObject
         ShowSettings = !ShowSettings;
         if (ShowSettings)
         {
-            // Settings overlay lives on Cleanup Wizard tab, so jump there when opening.
-            SelectedMainTabIndex = 0;
+            // The active workflow lives on the Inbox Review tab.
+            SelectedMainTabIndex = 1;
             RefreshProfileStats();
         }
     }
@@ -733,16 +734,18 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ResetProfile()
     {
-        if (SelectedAccount == null) return;
+        var targetAccount = SelectedAccount ?? GetSingleSelectedDatasetAccount(showWarning: false, actionName: "Reset Profile");
+        if (targetAccount == null) return;
 
         try
         {
-            var profile = new LearnedProfile { AccountKey = SelectedAccount.AccountKey };
+            var profile = new LearnedProfile { AccountKey = targetAccount.AccountKey };
             profile.Save();
             _learnedProfile = profile;
             RefreshProfileStats();
+            RefreshInboxReviewState();
             StatusMessage = "Learned profile has been reset.";
-            _log.Info("Profile reset for {Account}", SelectedAccount.EmailAddress);
+            _log.Info("Profile reset for {Account}", targetAccount.EmailAddress);
         }
         catch (Exception ex)
         {
@@ -816,7 +819,7 @@ public partial class MainViewModel : ObservableObject
             IsAiReady = true;
             AiStatus = "Ready";
             AiStatusColor = "#00C853";
-            _log.Info("AI ready: {Model} ({Size}), Ollama v{Ver}", modelName, modelSize, AiOllamaVersion);
+            _log.Info("AI ready: {Model} ({Size}), Ollama v{Ver}", modelName ?? "?", modelSize ?? "?", AiOllamaVersion ?? "?");
         }
         catch (Exception ex)
         {
@@ -865,6 +868,11 @@ public partial class MainViewModel : ObservableObject
     // ═════════════════════════════════════════════
 
     public ObservableCollection<AccountCheckViewModel> AvailableAccounts { get; private set; } = new();
+    [ObservableProperty] private string _inboxReviewSummary = "Choose exactly one account, categorize the Inbox, review in Outlook, then sync your corrections back into MailZen.";
+    [ObservableProperty] private string _inboxReviewLastRun = "No inbox review session saved yet.";
+    [ObservableProperty] private string _inboxReviewSyncSummary = "";
+    [ObservableProperty] private bool _hasInboxReviewSession;
+    [ObservableProperty] private bool _isInboxReviewSyncRunning;
 
     [ObservableProperty] private DateTime _datasetStartDate = DateTime.Today.AddMonths(-6);
     [ObservableProperty] private DateTime _datasetEndDate = DateTime.Today;
@@ -880,6 +888,194 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _datasetSaveXlsx = false;
 
     private CancellationTokenSource? _datasetCts;
+
+    [RelayCommand]
+    private async Task RunInboxReview()
+    {
+        var account = GetSingleSelectedDatasetAccount(true, "Inbox Review");
+        if (account == null) return;
+
+        IsDatasetRunning = true;
+        InboxReviewSyncSummary = "";
+        DatasetStatus = $"Scanning Inbox for {account.DisplayName}...";
+        StatusBarText = $"Inbox Review: {account.DisplayName}";
+        _datasetCts = new CancellationTokenSource();
+
+        string outputDirectory = EnsureDatasetOutputDirectory();
+        string filename = $"MailZen_InboxReview_{SanitizeFileName(account.AccountKey)}.csv";
+        string path = Path.Combine(outputDirectory, filename);
+
+        var progress = new Progress<string>(msg =>
+        {
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                DatasetStatus = msg;
+                StatusBarText = msg;
+            });
+        });
+
+        try
+        {
+            await _connector.ExportDataset(
+                new[] { account.StoreID },
+                BuildAccountKeyMap(new[] { account }),
+                DatasetStartDate,
+                DatasetEndDate,
+                includeInbox: true,
+                includeSent: false,
+                includeDeleted: false,
+                includeRead: DatasetIncludeRead,
+                applyOutlookCategories: true,
+                saveXlsx: DatasetSaveXlsx,
+                outputFilePath: path,
+                progress: progress,
+                cancellationToken: _datasetCts.Token);
+
+            var session = BuildInboxReviewSession(path, account);
+            session.Save();
+
+            DatasetStatus = $"Categorized {session.TotalInboxItems} inbox email(s). Review them in Outlook by MailZen category, then click Sync Review + Relearn.";
+            InboxReviewSummary = $"Latest run for {account.DisplayName}: Keep {session.KeepCount}, Review {session.ReviewCount}, Delete {session.DeleteCount}.";
+            StatusBarText = DatasetStatus;
+            RefreshInboxReviewState();
+
+            MessageBox.Show(
+                $"Inbox Review is ready for {account.DisplayName}.\n\n" +
+                $"Tagged: {session.TotalInboxItems} inbox email(s)\n" +
+                $"Keep: {session.KeepCount}\nReview: {session.ReviewCount}\nDelete: {session.DeleteCount}\n\n" +
+                "Next: review those categories in Outlook, then come back and click Sync Review + Relearn.",
+                "Inbox Review Ready",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (OperationCanceledException)
+        {
+            DatasetStatus = "Inbox Review cancelled.";
+            StatusBarText = DatasetStatus;
+        }
+        catch (Exception ex)
+        {
+            DatasetStatus = $"Inbox Review error: {ex.Message}";
+            StatusBarText = DatasetStatus;
+            _log.Error(ex, "Inbox Review run failed.");
+            MessageBox.Show($"Inbox Review failed:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsDatasetRunning = false;
+            _datasetCts?.Dispose();
+            _datasetCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SyncInboxReview()
+    {
+        var account = GetSingleSelectedDatasetAccount(true, "Sync Review + Relearn");
+        if (account == null) return;
+
+        var session = InboxReviewSession.Load(account.AccountKey);
+        if (session == null || session.Items.Count == 0)
+        {
+            MessageBox.Show(
+                "No saved Inbox Review session was found for this account. Run Categorize Inbox first.",
+                "Inbox Review",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        IsInboxReviewSyncRunning = true;
+        InboxReviewSyncSummary = "";
+        DatasetStatus = "Comparing the reviewed account against Outlook Inbox and Deleted Items...";
+        StatusBarText = DatasetStatus;
+
+        try
+        {
+            var oldestItem = session.Items.Min(x => x.ReceivedTime).AddDays(-1);
+            var newestItem = session.Items.Max(x => x.ReceivedTime).AddDays(1);
+            int maxItems = Math.Max(500, session.Items.Count * 5);
+
+            var inboxEmails = await _connector.GetEmailsByStoreIdAsync(
+                account.StoreID,
+                OutlookConnectorService.OlFolderInbox,
+                oldestItem,
+                newestItem,
+                maxItems);
+
+            DatasetStatus = "Scanning Deleted Items for your final outcomes...";
+            var deletedEmails = await _connector.GetEmailsByStoreIdAsync(
+                account.StoreID,
+                OutlookConnectorService.OlFolderDeletedItems,
+                oldestItem,
+                newestItem,
+                maxItems);
+
+            var inboxFingerprints = new HashSet<string>(
+                inboxEmails.Select(x => BuildEmailFingerprint(x.SenderEmailAddress, x.Subject, x.ReceivedTime)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var deletedFingerprints = new HashSet<string>(
+                deletedEmails.Select(x => BuildEmailFingerprint(x.SenderEmailAddress, x.Subject, x.ReceivedTime)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var profile = LearnedProfile.Load(account.AccountKey) ?? new LearnedProfile
+            {
+                AccountKey = account.AccountKey
+            };
+
+            int confirmedKeep = 0;
+            int confirmedDelete = 0;
+            int unresolved = 0;
+
+            foreach (var item in session.Items)
+            {
+                var fingerprint = BuildEmailFingerprint(item.SenderEmail, item.Subject, item.ReceivedTime);
+                var domain = ExtractDomain(item.SenderEmail);
+
+                if (deletedFingerprints.Contains(fingerprint))
+                {
+                    profile.RegisterConfirmedDelete(item.SenderEmail, domain);
+                    confirmedDelete++;
+                }
+                else if (inboxFingerprints.Contains(fingerprint))
+                {
+                    profile.RegisterConfirmedKeep(item.SenderEmail, domain);
+                    confirmedKeep++;
+                }
+                else
+                {
+                    unresolved++;
+                }
+            }
+
+            profile.LearnedAt = DateTime.UtcNow;
+            profile.Save();
+            _learnedProfile = profile;
+            RefreshProfileStats();
+
+            session.LastSyncedAt = DateTime.UtcNow;
+            session.Save();
+
+            InboxReviewSyncSummary =
+                $"Learned from {confirmedKeep + confirmedDelete} reviewed emails. " +
+                $"{confirmedKeep} now reinforce Keep, {confirmedDelete} reinforce Delete, {unresolved} were not found in Inbox or Deleted Items.";
+            DatasetStatus = InboxReviewSyncSummary + " Run Categorize Inbox again to apply the updated learning.";
+            StatusBarText = DatasetStatus;
+            RefreshInboxReviewState();
+        }
+        catch (Exception ex)
+        {
+            DatasetStatus = $"Sync error: {ex.Message}";
+            StatusBarText = DatasetStatus;
+            _log.Error(ex, "Inbox Review sync failed.");
+            MessageBox.Show($"Sync failed:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsInboxReviewSyncRunning = false;
+        }
+    }
 
     [RelayCommand]
     private async Task RunDataset()
@@ -915,8 +1111,10 @@ public partial class MainViewModel : ObservableObject
         
         try
         {
+            var selectedAccounts = Accounts.Where(acc => selectedIds.Contains(acc.StoreID)).ToList();
             await _connector.ExportDataset(
                 selectedIds,
+                BuildAccountKeyMap(selectedAccounts),
                 DatasetStartDate,
                 DatasetEndDate,
                 DatasetIncludeInbox,
@@ -1229,6 +1427,166 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    private Dictionary<string, string> BuildAccountKeyMap(IEnumerable<OutlookAccountInfo> accounts) =>
+        accounts
+            .GroupBy(acc => acc.StoreID)
+            .ToDictionary(g => g.Key, g => g.First().AccountKey, StringComparer.OrdinalIgnoreCase);
+
+    private OutlookAccountInfo? GetSingleSelectedDatasetAccount(bool showWarning, string actionName)
+    {
+        var selectedIds = AvailableAccounts.Where(x => x.IsSelected).Select(x => x.Id).ToList();
+        if (selectedIds.Count != 1)
+        {
+            if (showWarning)
+            {
+                MessageBox.Show(
+                    "Please select exactly one account for this Inbox Review action.",
+                    actionName,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+
+            return null;
+        }
+
+        return Accounts.FirstOrDefault(acc => acc.StoreID == selectedIds[0]);
+    }
+
+    private InboxReviewSession BuildInboxReviewSession(string csvPath, OutlookAccountInfo account)
+    {
+        var lines = File.ReadAllLines(csvPath);
+        if (lines.Length < 2)
+            throw new Exception("The Inbox Review export did not contain any data rows.");
+
+        var headers = lines[0].Split(',');
+        var columns = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < headers.Length; i++)
+            columns[headers[i].Trim()] = i;
+
+        string Col(string[] parts, string name) =>
+            columns.TryGetValue(name, out var index) && index < parts.Length ? parts[index].Trim() : "";
+
+        var session = new InboxReviewSession
+        {
+            AccountKey = account.AccountKey,
+            StoreId = account.StoreID,
+            StoreName = account.StoreName,
+            EmailAddress = account.EmailAddress,
+            DatasetCsvPath = csvPath,
+            CreatedAt = DateTime.UtcNow,
+            SourceStartDate = DatasetStartDate,
+            SourceEndDate = DatasetEndDate
+        };
+
+        for (int row = 1; row < lines.Length; row++)
+        {
+            var parts = lines[row].Split(',');
+            string folder = Col(parts, "Folder");
+            string accountName = Col(parts, "Account");
+            if (!folder.Equals("Inbox", StringComparison.OrdinalIgnoreCase) || !AccountMatches(account, accountName))
+                continue;
+
+            _ = int.TryParse(Col(parts, "JunkScore"), out int junkScore);
+            _ = DateTime.TryParse(Col(parts, "ReceivedTime"), out var receivedTime);
+
+            var item = new InboxReviewSessionItem
+            {
+                EntryId = Col(parts, "EntryID"),
+                SenderEmail = Col(parts, "SenderEmail").ToLowerInvariant(),
+                Subject = Col(parts, "Subject"),
+                ReceivedTime = receivedTime,
+                Recommendation = Col(parts, "Recommendation"),
+                JunkScore = junkScore
+            };
+
+            session.Items.Add(item);
+        }
+
+        session.TotalInboxItems = session.Items.Count;
+        session.KeepCount = session.Items.Count(x => x.Recommendation.Equals("Keep", StringComparison.OrdinalIgnoreCase));
+        session.ReviewCount = session.Items.Count(x => x.Recommendation.Equals("Review", StringComparison.OrdinalIgnoreCase));
+        session.DeleteCount = session.Items.Count(x => x.Recommendation.Equals("Delete", StringComparison.OrdinalIgnoreCase));
+
+        return session;
+    }
+
+    private void RefreshInboxReviewState()
+    {
+        var account = GetSingleSelectedDatasetAccount(showWarning: false, actionName: "Inbox Review");
+        if (account == null)
+        {
+            HasInboxReviewSession = false;
+            _learnedProfile = null;
+            RefreshProfileStats();
+            InboxReviewLastRun = "Select exactly one account to view saved Inbox Review state.";
+            return;
+        }
+
+        _learnedProfile = LearnedProfile.Load(account.AccountKey);
+        RefreshProfileStats();
+
+        var session = InboxReviewSession.Load(account.AccountKey);
+        if (session == null || session.Items.Count == 0)
+        {
+            HasInboxReviewSession = false;
+            InboxReviewLastRun = $"No saved Inbox Review session for {account.DisplayName}.";
+            return;
+        }
+
+        HasInboxReviewSession = true;
+        InboxReviewLastRun =
+            $"Latest session for {account.DisplayName}: {session.TotalInboxItems} inbox email(s) tagged on {session.CreatedAt.ToLocalTime():MMM d, yyyy h:mm tt}.";
+
+        if (session.LastSyncedAt != null)
+        {
+            InboxReviewLastRun += $" Last synced {session.LastSyncedAt.Value.ToLocalTime():MMM d, yyyy h:mm tt}.";
+        }
+    }
+
+    private static bool AccountMatches(OutlookAccountInfo account, string accountName) =>
+        accountName.Equals(account.DisplayName, StringComparison.OrdinalIgnoreCase) ||
+        accountName.Equals(account.StoreName, StringComparison.OrdinalIgnoreCase) ||
+        accountName.Equals(account.EmailAddress, StringComparison.OrdinalIgnoreCase);
+
+    private static string SanitizeFileName(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
+    }
+
+    private static string BuildEmailFingerprint(string senderEmail, string subject, DateTime receivedTime)
+    {
+        var normalizedSender = (senderEmail ?? "").Trim().ToLowerInvariant();
+        var normalizedSubject = NormalizeSubject(subject);
+        var rounded = new DateTime(
+            receivedTime.Year,
+            receivedTime.Month,
+            receivedTime.Day,
+            receivedTime.Hour,
+            receivedTime.Minute,
+            0,
+            receivedTime.Kind == DateTimeKind.Unspecified ? DateTimeKind.Local : receivedTime.Kind);
+
+        return $"{normalizedSender}|{normalizedSubject}|{rounded.ToUniversalTime():yyyyMMddHHmm}";
+    }
+
+    private static string NormalizeSubject(string? subject)
+    {
+        var normalized = (subject ?? "").Trim().ToLowerInvariant();
+        normalized = Regex.Replace(normalized, @"^\s*((re|fw|fwd)\s*:\s*)+", "");
+        normalized = Regex.Replace(normalized, @"\s+", " ");
+        return normalized;
+    }
+
+    private static string ExtractDomain(string? senderEmail)
+    {
+        var sender = (senderEmail ?? "").Trim().ToLowerInvariant();
+        var atIndex = sender.IndexOf('@');
+        return atIndex >= 0 && atIndex < sender.Length - 1
+            ? sender[(atIndex + 1)..]
+            : "";
+    }
+
     /// <summary>Populates the checklist for the dataset tab.</summary>
     public void LoadAccountsForDataset()
     {
@@ -1236,16 +1594,23 @@ public partial class MainViewModel : ObservableObject
         AvailableAccounts.Clear();
         foreach(var acc in Accounts)
         {
-            AvailableAccounts.Add(new AccountCheckViewModel 
-            { 
-                Name = acc.DisplayName, 
-                Id = acc.StoreID, 
-                IsSelected = true 
-            });
+            var item = new AccountCheckViewModel
+            {
+                Name = acc.DisplayName,
+                Id = acc.StoreID,
+                IsSelected = true
+            };
+            item.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(AccountCheckViewModel.IsSelected))
+                    RefreshInboxReviewState();
+            };
+            AvailableAccounts.Add(item);
         }
 
         // Restore saved defaults (overrides the "all selected" default above)
         LoadDatasetDefaults();
+        RefreshInboxReviewState();
     }
 
     [RelayCommand]
@@ -1255,6 +1620,8 @@ public partial class MainViewModel : ObservableObject
         {
             acc.IsSelected = isChecked;
         }
+
+        RefreshInboxReviewState();
     }
 
     // ═══ Global Inbox Category Cleanup ═══

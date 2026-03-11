@@ -294,6 +294,137 @@ public sealed class OutlookConnectorService : IDisposable
         return results;
     }
 
+    public async Task<List<EmailMessageInfo>> GetEmailsByStoreIdAsync(
+        string storeId,
+        int folderType,
+        DateTime startDate,
+        DateTime endDate,
+        int maxItems = 5000)
+    {
+        return await Task.Run(() =>
+        {
+            var results = new List<EmailMessageInfo>();
+            Exception? staException = null;
+
+            var thread = new Thread(() =>
+            {
+                dynamic? localApp = null;
+                dynamic? localSession = null;
+                dynamic? store = null;
+                dynamic? folder = null;
+                dynamic? items = null;
+                dynamic? restricted = null;
+
+                try
+                {
+                    RetryMessageFilter.Register();
+
+                    localApp = GetActiveComObject("Outlook.Application");
+                    localSession = localApp.GetNamespace("MAPI");
+                    localSession.Logon("", "", false, false);
+
+                    try { store = localSession.GetStoreFromID(storeId); }
+                    catch
+                    {
+                        dynamic stores = localSession.Stores;
+                        int count = stores.Count;
+                        for (int i = 1; i <= count; i++)
+                        {
+                            dynamic candidate = stores[i];
+                            try
+                            {
+                                string sid = candidate.StoreID ?? "";
+                                if (sid.Equals(storeId, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    store = candidate;
+                                    break;
+                                }
+                            }
+                            catch
+                            {
+                                Marshal.ReleaseComObject(candidate);
+                            }
+                        }
+                    }
+
+                    if (store == null)
+                        throw new Exception($"Could not find Outlook store '{storeId}'.");
+
+                    folder = store.GetDefaultFolder(folderType);
+                    items = folder.Items;
+                    items.Sort("[ReceivedTime]", true);
+
+                    string startS = startDate.ToString("g");
+                    string endS = endDate.ToString("g");
+                    string filter = $"[ReceivedTime] >= '{startS}' AND [ReceivedTime] <= '{endS}'";
+
+                    try { restricted = items.Restrict(filter); }
+                    catch { restricted = items; }
+
+                    dynamic item = restricted.GetFirst();
+                    int fetched = 0;
+                    while (item != null && fetched < maxItems)
+                    {
+                        try
+                        {
+                            if ((int)item.Class == 43)
+                            {
+                                DateTime received = (DateTime)item.ReceivedTime;
+                                string senderEmail = GetSenderAddress(item);
+
+                                results.Add(new EmailMessageInfo
+                                {
+                                    EntryId = (string)(item.EntryID ?? ""),
+                                    Subject = (string)(item.Subject ?? ""),
+                                    SenderName = (string)(item.SenderName ?? ""),
+                                    SenderEmailAddress = senderEmail ?? "",
+                                    ReceivedTime = received,
+                                    UnRead = (bool)(item.UnRead ?? false),
+                                    IsDeleted = folderType == OlFolderDeletedItems
+                                });
+                                fetched++;
+                            }
+                        }
+                        catch
+                        {
+                            // Skip malformed items and continue scanning.
+                        }
+                        finally
+                        {
+                            dynamic next = restricted.GetNext();
+                            Marshal.ReleaseComObject(item);
+                            item = next;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    staException = ex;
+                }
+                finally
+                {
+                    if (restricted != null && !ReferenceEquals(restricted, items))
+                        Marshal.ReleaseComObject(restricted);
+                    if (items != null) Marshal.ReleaseComObject(items);
+                    if (folder != null) Marshal.ReleaseComObject(folder);
+                    if (store != null) Marshal.ReleaseComObject(store);
+                    if (localSession != null) Marshal.ReleaseComObject(localSession);
+                    if (localApp != null) Marshal.ReleaseComObject(localApp);
+                    RetryMessageFilter.Revoke();
+                }
+            });
+
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+
+            if (staException != null)
+                throw new Exception($"Could not read Outlook folder state: {staException.Message}", staException);
+
+            return results;
+        });
+    }
+
     private string GetSenderAddress(dynamic mailItem)
     {
         try
@@ -1843,6 +1974,28 @@ public sealed class OutlookConnectorService : IDisposable
         return "Delete";
     }
 
+    private static int ApplyLearnedProfileAdjustments(int junkScore, string senderEmail, LearnedProfile? profile)
+    {
+        if (profile == null)
+            return junkScore;
+
+        var sender = (senderEmail ?? "").Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(sender))
+            return junkScore;
+
+        if (profile.DoNotDeleteSenders.Contains(sender))
+            return Math.Min(junkScore, 15);
+
+        if (profile.DeletedSenderCounts.TryGetValue(sender, out var senderDeletes))
+            junkScore += Math.Min(30, senderDeletes * 8);
+
+        var domain = ExtractDomainFromEmail(sender);
+        if (!string.IsNullOrEmpty(domain) && profile.DeletedDomainCounts.TryGetValue(domain, out var domainDeletes))
+            junkScore += Math.Min(15, domainDeletes * 3);
+
+        return Math.Clamp(junkScore, 0, 100);
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // Outlook Category Labelling
     // ═══════════════════════════════════════════════════════════════════
@@ -1954,6 +2107,7 @@ public sealed class OutlookConnectorService : IDisposable
     /// </summary>
     public async Task ExportDataset(
         IEnumerable<string> accountIds,
+        IReadOnlyDictionary<string, string>? accountKeysByStoreId,
         DateTime startDate,
         DateTime endDate,
         bool includeInbox,
@@ -1995,6 +2149,17 @@ public sealed class OutlookConnectorService : IDisposable
             // ══════════════════════════════════════════════════════════════
             var allEmails = new List<Dictionary<string, object>>();
             var senderStatsMap = new Dictionary<string, SenderStats>(StringComparer.OrdinalIgnoreCase);
+            var learnedProfilesByAccountKey = new Dictionary<string, LearnedProfile>(StringComparer.OrdinalIgnoreCase);
+
+            if (accountKeysByStoreId != null)
+            {
+                foreach (var accountKey in accountKeysByStoreId.Values.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    var profile = LearnedProfile.Load(accountKey);
+                    if (profile != null)
+                        learnedProfilesByAccountKey[accountKey] = profile;
+                }
+            }
 
             // COM STA Thread
             Exception? staException = null;
@@ -2077,6 +2242,10 @@ public sealed class OutlookConnectorService : IDisposable
                             Marshal.ReleaseComObject(store);
                             continue;
                         }
+
+                        string accountKey = "";
+                        if (accountKeysByStoreId != null)
+                            accountKeysByStoreId.TryGetValue(storeId, out accountKey);
 
                         progress.Report($"Pass 1: Scanning {displayName}...");
 
@@ -2318,6 +2487,7 @@ public sealed class OutlookConnectorService : IDisposable
                                             var emailData = new Dictionary<string, object>
                                             {
                                                 ["Account"] = displayName,
+                                                ["AccountKey"] = accountKey,
                                                 ["Folder"] = folderName,
                                                 ["Categories"] = safeCategories,
                                                 ["EntryID"] = entryId,
@@ -2411,6 +2581,10 @@ public sealed class OutlookConnectorService : IDisposable
                     {
                         string senderKey = ((string)email["SenderEmail"]).ToLowerInvariant();
                         int senderRep = senderReputations.ContainsKey(senderKey) ? senderReputations[senderKey] : 50;
+                        string accountKey = email.TryGetValue("AccountKey", out var accountKeyObj)
+                            ? (string)(accountKeyObj ?? "")
+                            : "";
+                        learnedProfilesByAccountKey.TryGetValue(accountKey, out var learnedProfile);
 
                         int junkScore = CalculateJunkScore(
                             (bool)email["HasUnsubscribe"],
@@ -2426,6 +2600,11 @@ public sealed class OutlookConnectorService : IDisposable
                             (DateTime)email["ReceivedTime"],
                             senderRep
                         );
+
+                        junkScore = ApplyLearnedProfileAdjustments(
+                            junkScore,
+                            (string)email["SenderEmail"],
+                            learnedProfile);
 
                         email["SenderReputation"] = senderRep;
                         email["JunkScore"] = junkScore;

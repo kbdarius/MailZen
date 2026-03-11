@@ -2,8 +2,8 @@
 
 ## Document Control
 - Product: MailZen
-- Software Version: `1.1.2`
-- Document Version: `1.1.2`
+- Software Version: `1.2.0`
+- Document Version: `1.2.0`
 - Last Updated: `2026-03-11`
 - Repository Path: `src/EmailManage.App`
 
@@ -33,9 +33,13 @@ Audience:
 ## 2. Solution Overview
 MailZen is a Windows WPF desktop app that helps users clean Outlook email using:
 - Rule-based dataset scoring.
-- AI-assisted triage using local Ollama models.
-- Outlook category tagging and folder movement workflows.
-- Review safety step before deletion automation.
+- Outlook-first Inbox Review with `MailZen: Keep`, `MailZen: Review`, and `MailZen: Delete` categories.
+- Review-and-relearn feedback based on what the user ultimately keeps in Inbox or deletes in Outlook.
+- Advanced export and CSV re-score tools for analysis and backtesting.
+
+Current product direction:
+- The visible UI is centered on the `Inbox Review` tab.
+- Legacy AI cleanup workflow services still exist in code, but the active product flow now favors category-based Outlook review instead of moving mail into review folders.
 
 Core design characteristics:
 - Single UI shell (`MainWindow.xaml`) using MVVM.
@@ -49,7 +53,7 @@ Core design characteristics:
 ## 3. High-Level Architecture
 ### 3.1 Context Diagram
 ```mermaid
-flowchart LR
+graph LR
     U[User] --> UI[WPF UI\nMainWindow + MainViewModel]
     UI --> OCS[OutlookConnectorService\nCOM Interop]
     UI --> LS[LearningService]
@@ -65,7 +69,7 @@ flowchart LR
 
 ### 3.2 Container/Module Diagram
 ```mermaid
-flowchart TB
+graph TB
         subgraph App[EmailManage App]
             UI[MainWindow XAML and code-behind]
             VM[MainViewModel]
@@ -97,7 +101,7 @@ flowchart TB
 ## 4. Repository and File Map
 Top-level:
 - `src/EmailManage.sln`: Solution entry.
-- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.1.2`).
+- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.2.0`).
 - `MailZen.bat`: Build-and-run helper that publishes a fresh root `MailZen.exe`.
 - `Docs/`: Product documentation.
 
@@ -131,7 +135,7 @@ Models:
 2. `MainWindow` restores saved window size/position/maximized state from local storage and constructs `MainViewModel`.
 3. `Window_Loaded` calls `MainViewModel.InitializeAsync()`.
 4. ViewModel connects to Outlook and hydrates account-dependent UI collections.
-5. User executes workflow commands (learn/triage/review/dataset/settings utilities).
+5. User executes Inbox Review, advanced export/re-score, and settings utilities.
 6. `Window_Closing` persists the current window layout.
 7. `Window_Closed` calls `MainViewModel.Cleanup()`.
 8. `App.OnExit` flushes logger.
@@ -154,53 +158,47 @@ sequenceDiagram
     OCS->>COM: Resolve/Create Outlook.Application
     OCS->>COM: GetNamespace("MAPI"), enumerate Stores
     OCS-->>UI: ConnectionResult(accounts, counts, status)
-    UI->>UI: Populate dataset accounts
-    UI->>UI: Populate color-test accounts
-    UI->>UI: Populate inbox-cleanup accounts
+    UI->>UI: Populate Inbox Review accounts
+    UI->>UI: Populate settings cleanup accounts
+    UI->>UI: Load latest saved review state
 ```
 
-### 6.2 Learn Profile from Deleted Items
+### 6.2 Categorize Inbox for Outlook Review
 ```mermaid
 sequenceDiagram
     participant UI as MainViewModel
-    participant LS as LearningService
+    participant VM as MainViewModel
+    participant OCS as OutlookConnectorService
+    participant S as InboxReviewSession
+
+    UI->>VM: RunInboxReviewAsync(account)
+    VM->>OCS: ExportDataset(inbox only, apply categories)
+    OCS-->>VM: scored CSV + Outlook categories
+    VM->>S: Save latest inbox_review_session.json
+    VM-->>UI: Outlook review ready
+```
+
+### 6.3 Sync Review + Relearn
+```mermaid
+sequenceDiagram
+    participant UI as MainViewModel
+    participant VM as MainViewModel
     participant OCS as OutlookConnectorService
     participant LP as LearnedProfile
 
-    UI->>LS: LearnFromDeletedItemsAsync(account)
-    LS->>OCS: GetEmailsAsync(folder=Deleted Items, 12 months, max 500)
-    OCS-->>LS: deleted emails
-    LS->>LS: Build sender/domain frequencies
-    LS->>LP: Save() -> learned_profile.json
-    LS-->>UI: LearnedProfile
+    UI->>VM: SyncInboxReviewAsync(account)
+    VM->>OCS: GetEmailsByStoreIdAsync(Inbox, date window)
+    VM->>OCS: GetEmailsByStoreIdAsync(Deleted Items, date window)
+    VM->>VM: Compare latest session against Outlook outcome
+    VM->>LP: RegisterConfirmedKeep / RegisterConfirmedDelete
+    LP-->>VM: Save learned_profile.json
+    VM-->>UI: Learning summary + rerun prompt
 ```
 
-### 6.3 Triage Inbox with AI
+### 6.4 Advanced Tools
 ```mermaid
-sequenceDiagram
-    participant UI as MainViewModel
-    participant TS as TriageService
-    participant OCS as OutlookConnectorService
-    participant OCL as OllamaClient
-    participant OA as Ollama API
-
-    UI->>TS: TriageInboxAsync(account, profile)
-    TS->>OCS: EnsureReviewFolderAsync()
-    TS->>OCS: GetEmailsAsync(folder=Inbox, 6 months, max 200)
-    loop each email
-      TS->>OCL: ClassifyEmailAsync(metadata + profile context)
-      OCL->>OA: POST /api/chat
-      OA-->>OCL: JSON classification
-      OCL-->>TS: AiClassification
-    end
-    TS->>OCS: BulkMoveToReviewFolderAsync(junk entryIds)
-    TS-->>UI: TriageResult
-```
-
-### 6.4 Dataset Builder (Unified Mode)
-```mermaid
-flowchart TD
-    A[Run Dataset Builder] --> B{DatasetModeIsExtract?}
+graph TD
+    A[Run Advanced Tool] --> B{DatasetModeIsExtract?}
     B -->|Yes| C[ExportDataset]
     B -->|No| D[ScoreExistingDataset]
     C --> E[Collect emails + sender stats]
@@ -221,11 +219,11 @@ flowchart TD
     M --> N
 ```
 
-### 6.5 Settings Color Test + Global Cleanup
-- Color Test path:
-1. `FetchEmailPreview()` pulls small inbox sample per selected store.
-2. `ApplyColorCodingTest()` applies `MailZen:*` categories and best-effort AutoFormatRules.
-3. `CleanUpColorTest()` reverts categories/rules for selected preview rows.
+### 6.5 Settings + Category Cleanup
+- Settings overlay path:
+1. User opens the gear icon from the header.
+2. MailZen shows AI status, connected accounts, learned profile stats, diagnostics, and output folder controls.
+3. Reset Profile operates on the currently selected Inbox Review account.
 
 - Global Inbox cleanup path:
 1. `ClearInboxCategoriesCommand` confirms with user.
@@ -240,6 +238,7 @@ flowchart TD
 - Logs: `%LOCALAPPDATA%\EmailManage\diagnostic.log` (rolling daily, keep 14 files)
 - Crash log: `%LOCALAPPDATA%\EmailManage\crash.log`
 - Learned profile: `%LOCALAPPDATA%\EmailManage\accounts\<accountKey>\learned_profile.json`
+- Latest inbox review session: `%LOCALAPPDATA%\EmailManage\accounts\<accountKey>\inbox_review_session.json`
 - Dataset defaults: `%LOCALAPPDATA%\EmailManage\dataset_defaults.json`
 - Window layout: `%LOCALAPPDATA%\EmailManage\window_state.json`
 
@@ -253,7 +252,36 @@ flowchart TD
 - `DoNotDeleteSenders: HashSet<string>`
 - `RuleCreatedSenders: HashSet<string>`
 
-### 7.3 Dataset CSV Contract
+Feedback behavior:
+- `RegisterConfirmedKeep(sender, domain)` protects senders and reduces delete bias.
+- `RegisterConfirmedDelete(sender, domain)` increases future delete bias for the same sender/domain.
+
+### 7.3 InboxReviewSession Schema
+`InboxReviewSession` fields:
+- `AccountKey`
+- `StoreId`
+- `StoreName`
+- `EmailAddress`
+- `DatasetCsvPath`
+- `CreatedAt`
+- `SourceStartDate`
+- `SourceEndDate`
+- `TotalInboxItems`
+- `KeepCount`
+- `ReviewCount`
+- `DeleteCount`
+- `LastSyncedAt`
+- `Items: List<InboxReviewSessionItem>`
+
+Each `InboxReviewSessionItem` stores:
+- `EntryId`
+- `SenderEmail`
+- `Subject`
+- `ReceivedTime`
+- `Recommendation`
+- `JunkScore`
+
+### 7.4 Dataset CSV Contract
 Required columns are validated by `OutlookConnectorService.RequiredCsvColumns`.
 Output scored columns append:
 - `SenderReputation`
@@ -266,6 +294,9 @@ Output scored columns append:
 Current implementation is heuristic and code-defined (not user-tunable in UI):
 - Sender reputation is derived from observed behaviors (read/delete/reply/unsubscribe patterns).
 - Junk score combines signals such as unsubscribe presence, bulk indicators, folder context, and sender reputation.
+- Inbox Review relearn applies a feedback layer from `LearnedProfile`:
+1. `DoNotDeleteSenders` caps future scores toward `Keep`
+2. Confirmed delete sender/domain counts push future scores toward `Delete`
 - Recommendation thresholds map score to Keep/Review/Delete.
 
 Primary file:
@@ -307,11 +338,10 @@ Robustness:
 ## 11. UI Architecture and Navigation
 Main areas:
 - Top Header: app identity, version badge, connection pill, settings gear.
-- Tab 1: Cleanup Wizard.
-- Tab 2: Dataset Builder (unified execution button with mode switch).
-- Settings Overlay:
-1. General tab (AI, accounts, profile, diagnostics, global inbox cleanup)
-2. Color Test tab
+- Single visible main tab: `Inbox Review`.
+- Inbox Review card: categorize Inbox, review in Outlook, sync review + relearn.
+- Advanced Tools card: Outlook export and CSV re-score actions.
+- Settings Overlay: AI, accounts, profile, diagnostics, output folder, global inbox cleanup.
 
 MVVM binding patterns:
 - Most actions are `[RelayCommand]` methods in `MainViewModel`.
@@ -325,7 +355,7 @@ If you need to change X, start in Y:
 - Outlook connectivity, folder operations, moving emails -> `OutlookConnectorService.cs`
 - AI prompt/classification behavior -> `OllamaClient.cs`
 - Learn logic and profile persistence -> `LearningService.cs`, `LearnedProfile.cs`
-- End-to-end triage flow -> `TriageService.cs`, `MainViewModel.cs`
+- Inbox Review session + sync/relearn flow -> `MainViewModel.cs`, `InboxReviewSession.cs`, `LearnedProfile.cs`
 - Dataset extraction/scoring outputs -> `OutlookConnectorService.cs`, `MainViewModel.cs`, `MainWindow.xaml`
 - Settings UI and new controls -> `MainWindow.xaml`, `MainViewModel.cs`
 - Version shown in UI -> `EmailManage.App.csproj`, `MainViewModel.cs`, `MainWindow.xaml`
@@ -373,52 +403,52 @@ Recommended semantic versioning:
 1. Launch MailZen.
 2. Wait for connection status to become connected.
 3. Open settings (gear) and verify AI status.
-4. If AI is not ready, click install/setup controls in Settings > General.
+4. If AI is not ready, click install/setup controls in Settings.
 5. On later launches, the main window reopens with the same size, position, and maximized state the user last used.
 
-### 14.3 Cleanup Wizard Flow
-1. Connect account and let MailZen learn from Deleted Items.
-2. Run triage to classify inbox messages.
-3. Review moved messages in "Review for Deletion".
-4. Keep important emails (move back), delete junk, and optionally create sender rules.
+### 14.3 Inbox Review Workflow
+1. In the `Inbox Review` tab, select exactly one Outlook account.
+2. Choose the date range and whether read Inbox mail should also be included.
+3. Click `Categorize Inbox`.
+4. Wait for MailZen to apply `MailZen: Keep`, `MailZen: Review`, and `MailZen: Delete` in Outlook.
+5. Open Outlook and review the tagged Inbox directly:
+   - filter `MailZen: Keep` and delete any false keeps
+   - filter `MailZen: Review` and decide keep vs delete
+   - filter `MailZen: Delete` and leave false deletes in Inbox
+6. Return to MailZen and click `Sync Review + Relearn`.
+7. MailZen compares the saved review session against the current Inbox and Deleted Items, updates learning, and tells you to run `Categorize Inbox` again when you want refreshed categories.
 
-### 14.4 Dataset Builder
+### 14.4 Advanced Tools
 Mode A: Extract from Outlook
-1. Select accounts/folders/date range.
-2. For Inbox extraction, leave `Include Read?` unchecked to focus on unread mail only, or check it to include read inbox mail too.
-3. Optional: apply Outlook categories.
-4. Optional: enable XLSX output.
-5. Click `Run Dataset Builder`.
+1. Use this when you want a CSV/XLSX export outside the normal Inbox Review loop.
+2. Select one or more accounts and any additional advanced folders/settings.
+3. Optional: enable `Apply MailZen categories during advanced tools runs`.
+4. Click `Run Advanced Tool`.
 
 Mode B: Re-score existing CSV
 1. Switch mode to `Re-score existing CSV`.
 2. Browse and validate CSV.
 3. Optional: apply Outlook categories.
 4. Optional: enable XLSX output.
-5. Click `Run Dataset Builder`.
+5. Click `Run Advanced Tool`.
 
-### 14.5 Color Test (Settings > Color Test)
-1. Select accounts.
-2. Load preview.
-3. Run test to apply temporary MailZen categories and formatting cues.
-4. Use cleanup button to remove test categories/rules.
-
-### 14.6 Global Inbox Category Cleanup (Settings > General)
+### 14.5 Global Inbox Category Cleanup (Settings)
 1. Select target accounts.
 2. Optional: include formatting rule removal.
 3. Click `Clear MailZen Categories from Inbox`.
 4. Confirm warning prompt.
 5. Monitor result text for scanned/cleared counts.
 
-### 14.7 Diagnostics and Logs
-- Use `Open Log Folder` in Settings > General.
+### 14.6 Diagnostics and Logs
+- Use `Open Log Folder` in Settings.
 - Collect `diagnostic.log` and `crash.log` when reporting issues.
 
-### 14.8 Troubleshooting
+### 14.7 Troubleshooting
 - Outlook disconnected: restart Outlook first, then retry MailZen connection.
 - AI unavailable: ensure Ollama is installed, running, and model is pulled.
+- If `Sync Review + Relearn` says items were unresolved, confirm those emails ended up either in Inbox or Deleted Items for the same account.
 - Category formatting not visible: some store types do not support view AutoFormatRules; category tags can still apply.
-- Long runs: check status panel and logs for progress; large inboxes can take time.
+- Long runs: check status log and diagnostics; large inboxes can take time.
 
 ---
 

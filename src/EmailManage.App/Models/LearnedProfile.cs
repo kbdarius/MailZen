@@ -26,6 +26,34 @@ public class LearnedProfile
     /// <summary>Senders for which Outlook rules have already been created. Avoids duplicates.</summary>
     public HashSet<string> RuleCreatedSenders { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public void RegisterConfirmedKeep(string? senderEmail, string? domain)
+    {
+        var sender = (senderEmail ?? "").Trim().ToLowerInvariant();
+        if (!string.IsNullOrEmpty(sender))
+        {
+            DoNotDeleteSenders.Add(sender);
+            DecrementCount(DeletedSenderCounts, sender);
+        }
+
+        var safeDomain = (domain ?? "").Trim().ToLowerInvariant();
+        if (!string.IsNullOrEmpty(safeDomain))
+            DecrementCount(DeletedDomainCounts, safeDomain);
+    }
+
+    public void RegisterConfirmedDelete(string? senderEmail, string? domain)
+    {
+        var sender = (senderEmail ?? "").Trim().ToLowerInvariant();
+        if (!string.IsNullOrEmpty(sender))
+        {
+            IncrementCount(DeletedSenderCounts, sender);
+            DoNotDeleteSenders.Remove(sender);
+        }
+
+        var safeDomain = (domain ?? "").Trim().ToLowerInvariant();
+        if (!string.IsNullOrEmpty(safeDomain))
+            IncrementCount(DeletedDomainCounts, safeDomain);
+    }
+
     // ── Persistence ──
 
     private static string GetProfilePath(string accountKey)
@@ -108,5 +136,23 @@ public class LearnedProfile
         }
 
         return sb.ToString();
+    }
+
+    private static void IncrementCount(Dictionary<string, int> counts, string key)
+    {
+        if (counts.TryGetValue(key, out var current))
+            counts[key] = current + 1;
+        else
+            counts[key] = 1;
+    }
+
+    private static void DecrementCount(Dictionary<string, int> counts, string key)
+    {
+        if (!counts.TryGetValue(key, out var current)) return;
+
+        if (current <= 1)
+            counts.Remove(key);
+        else
+            counts[key] = current - 1;
     }
 }
