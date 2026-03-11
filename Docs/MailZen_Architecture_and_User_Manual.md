@@ -54,23 +54,23 @@ Core design characteristics:
 ### 3.1 Context Diagram
 ```mermaid
 graph LR
-    U[User] --> UI[WPF UI\nMainWindow + MainViewModel]
-    UI --> OCS[OutlookConnectorService\nCOM Interop]
+    U[User] --> UI["WPF UI<br/>MainWindow + MainViewModel"]
+    UI --> OCS["OutlookConnectorService<br/>COM Interop"]
     UI --> LS[LearningService]
     UI --> TS[TriageService]
     UI --> OSS[OllamaSetupService]
     TS --> OC[OllamaClient]
-    OC --> OA[Local Ollama API\n127.0.0.1:11434]
-    OCS --> O[Microsoft Outlook MAPI/COM]
+    OC --> OA["Local Ollama API<br/>127.0.0.1:11434"]
+    OCS --> O["Microsoft Outlook MAPI/COM"]
     LS --> LP[(learned_profile.json)]
     UI --> DL[DiagnosticLogger]
-    DL --> LOG[(diagnostic.log + crash.log)]
+    DL --> LOG["(diagnostic.log + crash.log)"]
 ```
 
 ### 3.2 Container/Module Diagram
 ```mermaid
 graph TB
-        subgraph App[EmailManage App]
+        subgraph App["EmailManage App"]
             UI[MainWindow XAML and code-behind]
             VM[MainViewModel]
             H[Converters]
