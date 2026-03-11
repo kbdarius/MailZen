@@ -986,13 +986,13 @@
 
                             <TextBlock Text="2. Inbox Review Scope" FontWeight="Bold" Margin="0,0,0,8" FontSize="14"/>
                             <StackPanel Margin="5,0,0,0">
-                                <TextBlock Text="Categorize Inbox always scans the Inbox and applies MailZen categories in Outlook."
+                                <TextBlock Text="Inbox Review always uses read Inbox, Sent Items, and Deleted Items in the selected date range as scoring context."
                                            TextWrapping="Wrap" Foreground="#666" FontSize="11" Margin="0,0,0,8"/>
-                                <CheckBox Content="Include read Inbox mail too" IsChecked="{Binding DatasetIncludeRead}"
+                                <TextBlock Text="This checkbox only changes which Inbox emails are tagged for review in Outlook."
+                                           TextWrapping="Wrap" Foreground="#666" FontSize="11" Margin="0,0,0,8"/>
+                                <CheckBox Content="Also categorize read Inbox emails" IsChecked="{Binding DatasetIncludeRead}"
                                           Margin="0,4" FontSize="12"
-                                          ToolTip="Leave this unchecked to focus only on unread Inbox mail."/>
-                                <CheckBox Content="Include Sent Items in Advanced Tools" IsChecked="{Binding DatasetIncludeSent}" Margin="0,4" FontSize="12"/>
-                                <CheckBox Content="Include Deleted Items in Advanced Tools" IsChecked="{Binding DatasetIncludeDeleted}" Margin="0,4" FontSize="12"/>
+                                          ToolTip="Leave this unchecked to tag only unread Inbox emails during Inbox Review."/>
                             </StackPanel>
 
                             <TextBlock Text="3. Date Range" FontWeight="Bold" Margin="0,16,0,8" FontSize="14"/>
@@ -1078,6 +1078,19 @@
                                                    FontSize="11" Foreground="#555" TextTrimming="CharacterEllipsis" MaxWidth="260"/>
                                     </StackPanel>
                                     <TextBlock Text="{Binding ScoreDatasetValidation}" FontSize="12" Foreground="#333" TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <StackPanel Visibility="{Binding DatasetModeIsExtract, Converter={StaticResource BoolToVis}}"
+                                            Margin="0,0,0,16">
+                                    <TextBlock Text="Extract options:" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                    <CheckBox Content="Include Sent Items in advanced extracts"
+                                              IsChecked="{Binding DatasetIncludeSent}"
+                                              Margin="0,0,0,4" FontSize="12"/>
+                                    <CheckBox Content="Include Deleted Items in advanced extracts"
+                                              IsChecked="{Binding DatasetIncludeDeleted}"
+                                              Margin="0,0,0,4" FontSize="12"/>
+                                    <TextBlock Text="These options affect Advanced Tools only. Inbox Review always keeps Sent Items and Deleted Items internal as scoring context."
+                                               TextWrapping="Wrap" Foreground="#666" FontSize="11" Margin="0,6,0,0"/>
                                 </StackPanel>
 
                                 <CheckBox IsChecked="{Binding ApplyOutlookCategories}" Margin="0,0,0,16"

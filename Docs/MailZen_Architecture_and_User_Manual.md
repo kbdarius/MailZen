@@ -2,8 +2,8 @@
 
 ## Document Control
 - Product: MailZen
-- Software Version: `1.2.0`
-- Document Version: `1.2.0`
+- Software Version: `1.3.0`
+- Document Version: `1.3.0`
 - Last Updated: `2026-03-11`
 - Repository Path: `src/EmailManage.App`
 
@@ -34,6 +34,7 @@ Audience:
 MailZen is a Windows WPF desktop app that helps users clean Outlook email using:
 - Rule-based dataset scoring.
 - Outlook-first Inbox Review with `MailZen: Keep`, `MailZen: Review`, and `MailZen: Delete` categories.
+- Internal scoring context from read Inbox, Sent Items, and Deleted Items within the selected date range.
 - Review-and-relearn feedback based on what the user ultimately keeps in Inbox or deletes in Outlook.
 - Advanced export and CSV re-score tools for analysis and backtesting.
 
@@ -101,7 +102,7 @@ graph TB
 ## 4. Repository and File Map
 Top-level:
 - `src/EmailManage.sln`: Solution entry.
-- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.2.0`).
+- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.3.0`).
 - `MailZen.bat`: Build-and-run helper that publishes a fresh root `MailZen.exe`.
 - `Docs/`: Product documentation.
 - `Docs/MailZen.wiki/`: Local clone of the companion GitHub wiki repo for quick-start project pages that must stay aligned with this manual.
@@ -173,8 +174,10 @@ sequenceDiagram
     participant S as InboxReviewSession
 
     UI->>VM: RunInboxReviewAsync(account)
-    VM->>OCS: ExportDataset(inbox only, apply categories)
-    OCS-->>VM: scored CSV + Outlook categories
+    VM->>OCS: ExportDataset(inbox review mode)
+    OCS->>OCS: Scan read Inbox + Sent + Deleted as scoring context
+    OCS->>OCS: Apply categories only to target Inbox rows
+    OCS-->>VM: scored CSV + Outlook categories for review targets
     VM->>S: Save latest inbox_review_session.json
     VM-->>UI: Outlook review ready
 ```
@@ -284,6 +287,7 @@ Each `InboxReviewSessionItem` stores:
 
 ### 7.4 Dataset CSV Contract
 Required columns are validated by `OutlookConnectorService.RequiredCsvColumns`.
+For Inbox Review runs, the saved CSV contains only the Inbox emails that were actually tagged for review; read Inbox, Sent Items, and Deleted Items that were used only as scoring context are kept internal.
 Output scored columns append:
 - `SenderReputation`
 - `JunkScore`
@@ -295,6 +299,7 @@ Output scored columns append:
 Current implementation is heuristic and code-defined (not user-tunable in UI):
 - Sender reputation is derived from observed behaviors (read/delete/reply/unsubscribe patterns).
 - Junk score combines signals such as unsubscribe presence, bulk indicators, folder context, and sender reputation.
+- Inbox Review always gathers read Inbox, Sent Items, and Deleted Items in the selected range as scoring context, even when only unread Inbox mail is being tagged for review.
 - Inbox Review relearn applies a feedback layer from `LearnedProfile`:
 1. `DoNotDeleteSenders` caps future scores toward `Keep`
 2. Confirmed delete sender/domain counts push future scores toward `Delete`
@@ -390,7 +395,7 @@ For each release:
 
 Recommended semantic versioning:
 - Patch: bug fix, no behavior contract break (`1.1.1 -> 1.1.2`)
-- Minor: backward-compatible feature addition (`1.1.1 -> 1.2.0`)
+- Minor: backward-compatible feature addition (`1.2.0 -> 1.3.0`)
 - Major: breaking change (`1.x -> 2.0.0`)
 
 ---
@@ -410,9 +415,9 @@ Recommended semantic versioning:
 
 ### 14.3 Inbox Review Workflow
 1. In the `Inbox Review` tab, select exactly one Outlook account.
-2. Choose the date range and whether read Inbox mail should also be included.
+2. Choose the date range and decide whether read Inbox emails should also be tagged for review.
 3. Click `Categorize Inbox`.
-4. Wait for MailZen to apply `MailZen: Keep`, `MailZen: Review`, and `MailZen: Delete` in Outlook.
+4. MailZen uses read Inbox, Sent Items, and Deleted Items in the same date range as scoring context, then applies `MailZen: Keep`, `MailZen: Review`, and `MailZen: Delete` only to the target Inbox emails.
 5. Open Outlook and review the tagged Inbox directly:
    - filter `MailZen: Keep` and delete any false keeps
    - filter `MailZen: Review` and decide keep vs delete
@@ -423,9 +428,10 @@ Recommended semantic versioning:
 ### 14.4 Advanced Tools
 Mode A: Extract from Outlook
 1. Use this when you want a CSV/XLSX export outside the normal Inbox Review loop.
-2. Select one or more accounts and any additional advanced folders/settings.
-3. Optional: enable `Apply MailZen categories during advanced tools runs`.
-4. Click `Run Advanced Tool`.
+2. Select one or more accounts and any additional advanced folder options.
+3. Optional: include Sent Items and/or Deleted Items in the extract.
+4. Optional: enable `Apply MailZen categories during advanced tools runs`.
+5. Click `Run Advanced Tool`.
 
 Mode B: Re-score existing CSV
 1. Switch mode to `Re-score existing CSV`.
@@ -462,3 +468,39 @@ When adding a new feature:
 4. Add error logging with actionable context.
 5. Update this document's architecture and user manual sections.
 6. Keep version sync rule intact.
+
+---
+
+## 16. Future Features
+### 16.1 Review Checkpoints and Incremental Relearning
+Goal:
+- After a user finishes reviewing one Outlook account and is happy with the current learning state, MailZen should let that moment become a saved checkpoint.
+
+Intended behavior:
+- MailZen records the account, checkpoint date/time, the reviewed date range, and the learned profile state that existed at that point.
+- On later Inbox Review runs, MailZen can default to using only mail after the last checkpoint as new optimization input instead of repeatedly reprocessing older windows.
+- The existing learned profile still applies during scoring, but new optimization work focuses on the delta since the checkpoint.
+
+Suggested stored data:
+- `AccountKey`
+- checkpoint timestamp
+- last fully reviewed end date
+- snapshot of `learned_profile.json`
+- summary counts from the associated `inbox_review_session.json`
+- optional user note describing why the checkpoint was created
+
+Suggested future UI placement:
+- Settings panel under a new `Learning Checkpoints` section.
+
+Suggested actions:
+- `Create Checkpoint`
+- `View Checkpoints`
+- `Reset Learning`
+- `Restore Checkpoint`
+
+Reset and rollback intent:
+- `Reset Learning` should clear the active learned profile and any saved checkpoint metadata for the selected account.
+- `Restore Checkpoint` should roll the learned profile and default optimization window back to a previously saved checkpoint without forcing manual file edits.
+
+Implementation note:
+- This feature is not implemented in `1.3.0`. It is documented here so future work can add incremental optimization and rollback safely without losing the current Outlook-first review model.

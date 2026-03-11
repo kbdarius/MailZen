@@ -2118,7 +2118,8 @@ public sealed class OutlookConnectorService : IDisposable
         bool saveXlsx,
         string outputFilePath,
         IProgress<string> progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool useInboxReviewScoringContext = false)
     {
         await Task.Run(() =>
         {
@@ -2148,6 +2149,7 @@ public sealed class OutlookConnectorService : IDisposable
             // Two-pass approach: collect all emails first, then score them
             // ══════════════════════════════════════════════════════════════
             var allEmails = new List<Dictionary<string, object>>();
+            var outputEmails = new List<Dictionary<string, object>>();
             var senderStatsMap = new Dictionary<string, SenderStats>(StringComparer.OrdinalIgnoreCase);
             var learnedProfilesByAccountKey = new Dictionary<string, LearnedProfile>(StringComparer.OrdinalIgnoreCase);
 
@@ -2264,7 +2266,7 @@ public sealed class OutlookConnectorService : IDisposable
 
                         try
                         {
-                            if (includeSent)
+                            if (includeSent || useInboxReviewScoringContext)
                             {
                                 dynamic f = root.Folders["Sent Items"];
                                 if (f == null) f = store.GetDefaultFolder(5);
@@ -2274,7 +2276,7 @@ public sealed class OutlookConnectorService : IDisposable
 
                         try
                         {
-                            if (includeDeleted)
+                            if (includeDeleted || useInboxReviewScoringContext)
                             {
                                 dynamic f = root.Folders["Deleted Items"];
                                 if (f == null) f = store.GetDefaultFolder(3);
@@ -2318,12 +2320,19 @@ public sealed class OutlookConnectorService : IDisposable
                                         try { isUnread = mail.UnRead; } catch {}
 
                                         bool isInbox = folderName.Equals("Inbox", StringComparison.OrdinalIgnoreCase);
-                                        if (isInbox && !isUnread && !includeRead)
+                                        bool skipReadInbox = isInbox && !isUnread && !includeRead && !useInboxReviewScoringContext;
+                                        if (skipReadInbox)
                                         {
                                             // Skip read Inbox items unless user opts in to include them.
                                         }
                                         else
                                         {
+                                            bool isContextOnly =
+                                                useInboxReviewScoringContext &&
+                                                ((isInbox && !isUnread && !includeRead) ||
+                                                 folderName.Equals("Sent Items", StringComparison.OrdinalIgnoreCase) ||
+                                                 folderName.Equals("Deleted Items", StringComparison.OrdinalIgnoreCase));
+
                                             string entryId = ""; try { entryId = mail.EntryID; } catch {}
                                             DateTime received = DateTime.MinValue; try { received = mail.ReceivedTime; } catch {}
                                             string senderName = ""; try { senderName = mail.SenderName; } catch {}
@@ -2513,6 +2522,8 @@ public sealed class OutlookConnectorService : IDisposable
                                             };
 
                                             allEmails.Add(emailData);
+                                            if (!isContextOnly)
+                                                outputEmails.Add(emailData);
 
                                             // Build sender stats
                                             string senderKey = safeAddr.ToLowerInvariant();
@@ -2613,13 +2624,20 @@ public sealed class OutlookConnectorService : IDisposable
 
                     progress.Report("Pass 2 complete: All emails scored.");
 
+                    if (useInboxReviewScoringContext && outputEmails.Count == 0)
+                    {
+                        throw new Exception(includeRead
+                            ? "No Inbox emails were found in the selected date range."
+                            : "No unread Inbox emails were found in the selected date range. Turn on 'Also categorize read Inbox emails' if you want MailZen to tag read mail too.");
+                    }
+
                     // ══════════════════════════════════════════
                     // PASS 3 (optional): Apply Outlook categories
                     // ══════════════════════════════════════════
                     if (applyOutlookCategories && ns != null)
                     {
                         progress.Report("Pass 3: Applying color categories in Outlook...");
-                        ApplyCategoriesToOutlook(ns, allEmails, progress, cancellationToken);
+                        ApplyCategoriesToOutlook(ns, outputEmails, progress, cancellationToken);
                     }
 
                     // Release COM (ns stays alive until after categories are applied)
@@ -2656,7 +2674,7 @@ public sealed class OutlookConnectorService : IDisposable
                 var csvHeader = "Account,Folder,Categories,EntryID,ReceivedTime,SenderName,SenderEmail,Subject,BodySnippet,IsRead,HasUnsubscribe,IsBulk,FocusedOrOther,HasFeedbackId,IsMailingList,IsGoogleGroup,DMARC_Pass,SPF_Pass,DKIM_Pass,YahooBulk,YahooNewman,YahooAd,YahooClassification,SenderReputation,JunkScore,Recommendation";
                 var csvLines = new List<string> { csvHeader };
 
-                foreach (var email in allEmails)
+                foreach (var email in outputEmails)
                 {
                     string safeRec = ((DateTime)email["ReceivedTime"]).ToString("yyyy-MM-dd HH:mm:ss");
                     string line = $"{email["Account"]},{email["Folder"]},{email.GetValueOrDefault("Categories", "")},{email["EntryID"]},{safeRec}," +
@@ -2673,9 +2691,12 @@ public sealed class OutlookConnectorService : IDisposable
 
                 // Write XLSX with 3 sheets (optional)
                 if (saveXlsx)
-                    WriteExcelWithScoring(outputFilePath, allEmails, senderStatsMap, progress);
+                    WriteExcelWithScoring(outputFilePath, outputEmails, senderStatsMap, progress);
 
-                progress.Report($"Done: {allEmails.Count} emails scored and saved.");
+                if (outputEmails.Count == allEmails.Count)
+                    progress.Report($"Done: {outputEmails.Count} emails scored and saved.");
+                else
+                    progress.Report($"Done: {outputEmails.Count} review-target emails saved using {allEmails.Count} extracted emails as scoring context.");
             }
             catch (Exception ex)
             {

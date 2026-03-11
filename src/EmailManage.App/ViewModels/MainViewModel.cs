@@ -868,7 +868,7 @@ public partial class MainViewModel : ObservableObject
     // ═════════════════════════════════════════════
 
     public ObservableCollection<AccountCheckViewModel> AvailableAccounts { get; private set; } = new();
-    [ObservableProperty] private string _inboxReviewSummary = "Choose exactly one account, categorize the Inbox, review in Outlook, then sync your corrections back into MailZen.";
+    [ObservableProperty] private string _inboxReviewSummary = "Choose exactly one account, categorize the Inbox, review in Outlook, then sync your corrections back into MailZen. Inbox Review always uses read Inbox, Sent Items, and Deleted Items in the selected date range as scoring context.";
     [ObservableProperty] private string _inboxReviewLastRun = "No inbox review session saved yet.";
     [ObservableProperty] private string _inboxReviewSyncSummary = "";
     [ObservableProperty] private bool _hasInboxReviewSession;
@@ -929,12 +929,13 @@ public partial class MainViewModel : ObservableObject
                 saveXlsx: DatasetSaveXlsx,
                 outputFilePath: path,
                 progress: progress,
-                cancellationToken: _datasetCts.Token);
+                cancellationToken: _datasetCts.Token,
+                useInboxReviewScoringContext: true);
 
             var session = BuildInboxReviewSession(path, account);
             session.Save();
 
-            DatasetStatus = $"Categorized {session.TotalInboxItems} inbox email(s). Review them in Outlook by MailZen category, then click Sync Review + Relearn.";
+            DatasetStatus = $"Categorized {session.TotalInboxItems} inbox email(s). MailZen also used read Inbox, Sent Items, and Deleted Items in the same date range as scoring context. Review them in Outlook by MailZen category, then click Sync Review + Relearn.";
             InboxReviewSummary = $"Latest run for {account.DisplayName}: Keep {session.KeepCount}, Review {session.ReviewCount}, Delete {session.DeleteCount}.";
             StatusBarText = DatasetStatus;
             RefreshInboxReviewState();
@@ -943,6 +944,7 @@ public partial class MainViewModel : ObservableObject
                 $"Inbox Review is ready for {account.DisplayName}.\n\n" +
                 $"Tagged: {session.TotalInboxItems} inbox email(s)\n" +
                 $"Keep: {session.KeepCount}\nReview: {session.ReviewCount}\nDelete: {session.DeleteCount}\n\n" +
+                "MailZen also used read Inbox, Sent Items, and Deleted Items in the same date range as scoring context.\n\n" +
                 "Next: review those categories in Outlook, then come back and click Sync Review + Relearn.",
                 "Inbox Review Ready",
                 MessageBoxButton.OK,
