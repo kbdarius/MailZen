@@ -22,3 +22,6 @@ Desktop.ini
 
 # Local packages
 src/local-packages/
+
+# Local companion repos
+Docs/MailZen.wiki/

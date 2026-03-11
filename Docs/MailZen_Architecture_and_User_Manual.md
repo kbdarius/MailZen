@@ -104,7 +104,7 @@ Top-level:
 - `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.2.0`).
 - `MailZen.bat`: Build-and-run helper that publishes a fresh root `MailZen.exe`.
 - `Docs/`: Product documentation.
-- `MailZen.wiki`: Companion GitHub wiki repo for quick-start project pages that must stay aligned with this manual.
+- `Docs/MailZen.wiki/`: Local clone of the companion GitHub wiki repo for quick-start project pages that must stay aligned with this manual.
 
 Important app files:
 - `src/EmailManage.App/App.xaml`: Resource dictionary and converters.
