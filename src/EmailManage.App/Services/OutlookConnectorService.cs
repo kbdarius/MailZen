@@ -2550,6 +2550,7 @@ public sealed class OutlookConnectorService : IDisposable
     /// </summary>
     public async Task ScoreExistingDataset(
         string inputCsvPath,
+        string outputDirectory,
         bool applyOutlookCategories,
         bool saveXlsx,
         IProgress<string> progress,
@@ -2721,8 +2722,11 @@ public sealed class OutlookConnectorService : IDisposable
             // ── Write output ───────────────────────────────────────────
             progress.Report("Writing scored output...");
 
+            if (!Directory.Exists(outputDirectory))
+                Directory.CreateDirectory(outputDirectory);
+
             string outputPath = Path.Combine(
-                Path.GetDirectoryName(inputCsvPath) ?? "",
+                outputDirectory,
                 Path.GetFileNameWithoutExtension(inputCsvPath) + "_scored.csv");
 
             var csvHeader = "Account,Folder,Categories,EntryID,ReceivedTime,SenderName,SenderEmail,Subject,BodySnippet,IsRead,HasUnsubscribe,IsBulk,FocusedOrOther,HasFeedbackId,IsMailingList,IsGoogleGroup,DMARC_Pass,SPF_Pass,DKIM_Pass,YahooBulk,YahooNewman,YahooAd,YahooClassification,SenderReputation,JunkScore,Recommendation";

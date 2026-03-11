@@ -210,6 +210,22 @@
                         <!-- Separator -->
                         <Border Height="1" Background="#E5E7EB" Margin="0,16,0,16"/>
 
+                        <!-- ═══ Dataset Output Folder ═══ -->
+                        <TextBlock Text="📦 Dataset Output Folder" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Choose where exported dataset CSV/XLSX files are saved. This applies to both new exports and re-scored datasets."
+                               TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+                            <TextBlock Text="{Binding DatasetOutputDirectory}" FontSize="12"
+                                   Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap"/>
+                        </Border>
+                        <Button Content="📁 Browse Output Folder" Style="{StaticResource SecondaryButton}"
+                            Command="{Binding BrowseDatasetOutputDirectoryCommand}" HorizontalAlignment="Left"
+                            ToolTip="Select the folder where MailZen saves dataset export files."/>
+
+                        <!-- Separator -->
+                        <Border Height="1" Background="#E5E7EB" Margin="0,16,0,16"/>
+
                         <!-- ═══ Clear MailZen Categories ═══ -->
                         <TextBlock Text="🗂 Clear MailZen Categories — Inbox" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>

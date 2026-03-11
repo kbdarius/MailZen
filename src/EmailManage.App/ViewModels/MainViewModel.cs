@@ -873,6 +873,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _datasetIncludeDeleted = false;
     [ObservableProperty] private bool _datasetIncludeRead = false;
     [ObservableProperty] private bool _applyOutlookCategories = false;
+    [ObservableProperty] private string _datasetOutputDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
     [ObservableProperty] private string _datasetStatus = "Ready to start.";
     [ObservableProperty] private bool _isDatasetRunning = false;
     [ObservableProperty] private bool _datasetModeIsExtract = true;
@@ -902,10 +903,10 @@ public partial class MainViewModel : ObservableObject
         DatasetStatus = "Starting extraction...";
         _datasetCts = new CancellationTokenSource();
 
-        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        string outputDirectory = EnsureDatasetOutputDirectory();
         // Fixed filename so we can append incrementally
         string filename = "MailZen_Master_Dataset.csv";
-        string path = Path.Combine(desktop, filename);
+        string path = Path.Combine(outputDirectory, filename);
 
         var progress = new Progress<string>(msg => 
         {
@@ -933,7 +934,7 @@ public partial class MainViewModel : ObservableObject
                 IsDatasetRunning = false;
                 DatasetStatus = "Completed Successfully.";
             });
-            MessageBox.Show($"Dataset saved to Desktop:\n{filename}", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"Dataset saved to:\n{path}", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (OperationCanceledException)
         {
@@ -1153,7 +1154,7 @@ public partial class MainViewModel : ObservableObject
         {
             Title = "Select a MailZen Dataset CSV",
             Filter = "CSV Files (*.csv)|*.csv",
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+            InitialDirectory = EnsureDatasetOutputDirectory()
         };
         if (dlg.ShowDialog() == true)
         {
@@ -1200,6 +1201,7 @@ public partial class MainViewModel : ObservableObject
         {
             await _connector.ScoreExistingDataset(
                 ScoreDatasetPath,
+                EnsureDatasetOutputDirectory(),
                 ApplyOutlookCategories,
                 DatasetSaveXlsx,
                 progress,
@@ -1211,8 +1213,10 @@ public partial class MainViewModel : ObservableObject
                 DatasetStatus = "Scoring complete.";
             });
 
-            string outputName = Path.GetFileNameWithoutExtension(ScoreDatasetPath) + "_scored.csv";
-            MessageBox.Show($"Scored dataset saved:\n{outputName}", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+            string outputPath = Path.Combine(
+                EnsureDatasetOutputDirectory(),
+                Path.GetFileNameWithoutExtension(ScoreDatasetPath) + "_scored.csv");
+            MessageBox.Show($"Scored dataset saved:\n{outputPath}", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (OperationCanceledException)
         {
@@ -1326,7 +1330,29 @@ public partial class MainViewModel : ObservableObject
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MailZen", "dataset_defaults.json");
 
     [RelayCommand]
+    private void BrowseDatasetOutputDirectory()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Select output folder for MailZen datasets",
+            InitialDirectory = EnsureDatasetOutputDirectory()
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            DatasetOutputDirectory = dialog.FolderName;
+            SaveDatasetDefaultsCore(showConfirmation: false);
+            DatasetStatus = $"Output folder set to: {DatasetOutputDirectory}";
+        }
+    }
+
+    [RelayCommand]
     private void SaveDatasetDefaults()
+    {
+        SaveDatasetDefaultsCore(showConfirmation: true);
+    }
+
+    private void SaveDatasetDefaultsCore(bool showConfirmation)
     {
         try
         {
@@ -1337,6 +1363,7 @@ public partial class MainViewModel : ObservableObject
                 IncludeDeleted = DatasetIncludeDeleted,
                 IncludeRead = DatasetIncludeRead,
                 ApplyOutlookCategories = ApplyOutlookCategories,
+                OutputDirectory = DatasetOutputDirectory,
                 StartMonthsAgo = (int)Math.Round((DateTime.Today - DatasetStartDate).TotalDays / 30.0),
                 SelectedAccountNames = AvailableAccounts.Where(a => a.IsSelected).Select(a => a.Name).ToList()
             };
@@ -1347,12 +1374,14 @@ public partial class MainViewModel : ObservableObject
             var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(DatasetSettingsPath, json);
 
-            MessageBox.Show("Default settings saved! They will be restored automatically next time.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (showConfirmation)
+                MessageBox.Show("Default settings saved! They will be restored automatically next time.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
             _log.Error(ex, "Failed to save dataset settings.");
-            MessageBox.Show($"Could not save settings: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            if (showConfirmation)
+                MessageBox.Show($"Could not save settings: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -1373,6 +1402,9 @@ public partial class MainViewModel : ObservableObject
             // New behavior: default to unread-only inbox scan unless user opts into read mail.
             DatasetIncludeRead = settings.IncludeRead ?? false;
             ApplyOutlookCategories = settings.ApplyOutlookCategories;
+            DatasetOutputDirectory = string.IsNullOrWhiteSpace(settings.OutputDirectory)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+                : settings.OutputDirectory;
 
             if (settings.StartMonthsAgo > 0)
                 DatasetStartDate = DateTime.Today.AddMonths(-settings.StartMonthsAgo);
@@ -1392,6 +1424,17 @@ public partial class MainViewModel : ObservableObject
         {
             _log.Error(ex, "Failed to load dataset settings.");
         }
+    }
+
+    private string EnsureDatasetOutputDirectory()
+    {
+        if (string.IsNullOrWhiteSpace(DatasetOutputDirectory))
+            DatasetOutputDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+
+        if (!Directory.Exists(DatasetOutputDirectory))
+            Directory.CreateDirectory(DatasetOutputDirectory);
+
+        return DatasetOutputDirectory;
     }
 
     // ═════════════════════════════════════════════
@@ -1427,6 +1470,7 @@ public class DatasetSettings
     public bool IncludeDeleted { get; set; }
     public bool? IncludeRead { get; set; }
     public bool ApplyOutlookCategories { get; set; }
+    public string? OutputDirectory { get; set; }
     public int StartMonthsAgo { get; set; } = 6;
     public List<string> SelectedAccountNames { get; set; } = new();
 }
