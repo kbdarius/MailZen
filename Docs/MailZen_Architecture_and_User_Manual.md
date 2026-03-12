@@ -4,7 +4,7 @@
 - Product: MailZen
 - Software Version: `1.3.1`
 - Document Version: `1.3.1`
-- Last Updated: `2026-03-11`
+- Last Updated: `2026-03-12`
 - Repository Path: `src/EmailManage.App`
 
 Version sync rule:
@@ -105,7 +105,7 @@ Top-level:
 - `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.3.1`).
 - `MailZen.bat`: Build-and-run helper that publishes a fresh root `MailZen.exe`.
 - `Docs/`: Product documentation.
-- `Docs/MailZen.wiki/`: Local clone of the companion GitHub wiki repo for quick-start project pages that must stay aligned with this manual.
+- `Docs/MailZen.wiki/`: Local clone of the companion GitHub wiki repo for quick-start project pages and simplified Mermaid onboarding diagrams that must stay aligned with this manual.
 
 Important app files:
 - `src/EmailManage.App/App.xaml`: Resource dictionary and converters.
