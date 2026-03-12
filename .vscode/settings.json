@@ -2,7 +2,7 @@
   "markdown-pdf.type": [
     "html"
   ],
-  "markdown-pdf.mermaidServer": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js",
+  "markdown-pdf.mermaidServer": "file:///C:/Users/Dariu/Dropbox/OTHER/Tools/MailZen/Docs/_assets/mermaid.min.js",
   "markdown-pdf.includeDefaultStyles": true,
   "markdown-pdf.breaks": true,
   "markdown-pdf.outputDirectory": "Docs\\_export"

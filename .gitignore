@@ -4,12 +4,15 @@
 publish/
 MailZen.exe
 Docs/*.html
+Docs/_assets/
 
 # Dataset exports
 MailZen_Master_Dataset.csv
 MailZen_Master_Dataset.xlsx
 *_Dataset.csv
 *_Dataset.xlsx
+*_InboxReview_*.csv
+*_InboxReview_*.xlsx
 
 # IDE
 .vs/
