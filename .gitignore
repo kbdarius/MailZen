@@ -16,6 +16,7 @@ MailZen_Master_Dataset.xlsx
 
 # IDE
 .vs/
+.vscode/
 *.user
 *.suo
 

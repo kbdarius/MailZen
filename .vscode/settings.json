@@ -1,9 +1,0 @@
-{
-  "markdown-pdf.type": [
-    "html"
-  ],
-  "markdown-pdf.mermaidServer": "file:///C:/Users/Dariu/Dropbox/OTHER/Tools/MailZen/Docs/_assets/mermaid.min.js",
-  "markdown-pdf.includeDefaultStyles": true,
-  "markdown-pdf.breaks": true,
-  "markdown-pdf.outputDirectory": "Docs\\_export"
-}
