@@ -1013,6 +1013,18 @@ public partial class MainViewModel : ObservableObject
                 newestItem,
                 maxItems);
 
+            var inboxEntryIds = new HashSet<string>(
+                inboxEmails
+                    .Select(x => x.EntryId)
+                    .Where(x => !string.IsNullOrWhiteSpace(x)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var deletedEntryIds = new HashSet<string>(
+                deletedEmails
+                    .Select(x => x.EntryId)
+                    .Where(x => !string.IsNullOrWhiteSpace(x)),
+                StringComparer.OrdinalIgnoreCase);
+
             var inboxFingerprints = new HashSet<string>(
                 inboxEmails.Select(x => BuildEmailFingerprint(x.SenderEmailAddress, x.Subject, x.ReceivedTime)),
                 StringComparer.OrdinalIgnoreCase);
@@ -1035,7 +1047,17 @@ public partial class MainViewModel : ObservableObject
                 var fingerprint = BuildEmailFingerprint(item.SenderEmail, item.Subject, item.ReceivedTime);
                 var domain = ExtractDomain(item.SenderEmail);
 
-                if (deletedFingerprints.Contains(fingerprint))
+                if (!string.IsNullOrWhiteSpace(item.EntryId) && deletedEntryIds.Contains(item.EntryId))
+                {
+                    profile.RegisterConfirmedDelete(item.SenderEmail, domain);
+                    confirmedDelete++;
+                }
+                else if (!string.IsNullOrWhiteSpace(item.EntryId) && inboxEntryIds.Contains(item.EntryId))
+                {
+                    profile.RegisterConfirmedKeep(item.SenderEmail, domain);
+                    confirmedKeep++;
+                }
+                else if (deletedFingerprints.Contains(fingerprint))
                 {
                     profile.RegisterConfirmedDelete(item.SenderEmail, domain);
                     confirmedDelete++;
@@ -1061,7 +1083,7 @@ public partial class MainViewModel : ObservableObject
 
             InboxReviewSyncSummary =
                 $"Learned from {confirmedKeep + confirmedDelete} reviewed emails. " +
-                $"{confirmedKeep} now reinforce Keep, {confirmedDelete} reinforce Delete, {unresolved} were not found in Inbox or Deleted Items.";
+                $"{confirmedKeep} matched in Inbox, {confirmedDelete} matched in Deleted Items, {unresolved} could not be matched in either folder.";
             DatasetStatus = InboxReviewSyncSummary + " Run Categorize Inbox again to apply the updated learning.";
             StatusBarText = DatasetStatus;
             RefreshInboxReviewState();
@@ -1576,6 +1598,7 @@ public partial class MainViewModel : ObservableObject
     {
         var normalized = (subject ?? "").Trim().ToLowerInvariant();
         normalized = Regex.Replace(normalized, @"^\s*((re|fw|fwd)\s*:\s*)+", "");
+        normalized = normalized.Replace("\"", " ").Replace(",", " ");
         normalized = Regex.Replace(normalized, @"\s+", " ");
         return normalized;
     }

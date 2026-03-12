@@ -2,8 +2,8 @@
 
 ## Document Control
 - Product: MailZen
-- Software Version: `1.3.0`
-- Document Version: `1.3.0`
+- Software Version: `1.3.1`
+- Document Version: `1.3.1`
 - Last Updated: `2026-03-11`
 - Repository Path: `src/EmailManage.App`
 
@@ -102,7 +102,7 @@ graph TB
 ## 4. Repository and File Map
 Top-level:
 - `src/EmailManage.sln`: Solution entry.
-- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.3.0`).
+- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.3.1`).
 - `MailZen.bat`: Build-and-run helper that publishes a fresh root `MailZen.exe`.
 - `Docs/`: Product documentation.
 - `Docs/MailZen.wiki/`: Local clone of the companion GitHub wiki repo for quick-start project pages that must stay aligned with this manual.
@@ -193,7 +193,7 @@ sequenceDiagram
     UI->>VM: SyncInboxReviewAsync(account)
     VM->>OCS: GetEmailsByStoreIdAsync(Inbox, date window)
     VM->>OCS: GetEmailsByStoreIdAsync(Deleted Items, date window)
-    VM->>VM: Compare latest session against Outlook outcome
+    VM->>VM: Match by EntryID when available, then normalized sender/subject/time
     VM->>LP: RegisterConfirmedKeep / RegisterConfirmedDelete
     LP-->>VM: Save learned_profile.json
     VM-->>UI: Learning summary + rerun prompt
@@ -454,7 +454,7 @@ Mode B: Re-score existing CSV
 ### 14.7 Troubleshooting
 - Outlook disconnected: restart Outlook first, then retry MailZen connection.
 - AI unavailable: ensure Ollama is installed, running, and model is pulled.
-- If `Sync Review + Relearn` says items were unresolved, confirm those emails ended up either in Inbox or Deleted Items for the same account.
+- If `Sync Review + Relearn` says items could not be matched in either folder, confirm those emails ended up either in Inbox or Deleted Items for the same account; messages moved elsewhere are intentionally left unresolved.
 - Category formatting not visible: some store types do not support view AutoFormatRules; category tags can still apply.
 - Long runs: check status log and diagnostics; large inboxes can take time.
 
@@ -503,4 +503,4 @@ Reset and rollback intent:
 - `Restore Checkpoint` should roll the learned profile and default optimization window back to a previously saved checkpoint without forcing manual file edits.
 
 Implementation note:
-- This feature is not implemented in `1.3.0`. It is documented here so future work can add incremental optimization and rollback safely without losing the current Outlook-first review model.
+- This feature is not implemented in `1.3.1`. It is documented here so future work can add incremental optimization and rollback safely without losing the current Outlook-first review model.
