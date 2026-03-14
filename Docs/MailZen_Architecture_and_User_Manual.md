@@ -2,8 +2,8 @@
 
 ## Document Control
 - Product: MailZen
-- Software Version: `1.4.0`
-- Document Version: `1.4.0`
+- Software Version: `1.4.1`
+- Document Version: `1.4.1`
 - Last Updated: `2026-03-14`
 - Repository Path: `src/EmailManage.App`
 
@@ -102,7 +102,7 @@ graph TB
 ## 4. Repository and File Map
 Top-level:
 - `src/EmailManage.sln`: Solution entry.
-- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.4.0`).
+- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.4.1`).
 - `MailZen.bat`: Build-and-run helper that publishes a fresh root `MailZen.exe`.
 - `Docs/`: Product documentation.
 - `Docs/MailZen.wiki/`: Local clone of the companion GitHub wiki repo for quick-start project pages and simplified Mermaid onboarding diagrams that must stay aligned with this manual.
@@ -381,7 +381,7 @@ If you need to change X, start in Y:
 - AI prompt/classification behavior -> `OllamaClient.cs`
 - Learn logic and profile persistence -> `LearningService.cs`, `LearnedProfile.cs`
 - Inbox Review session + sync/relearn flow -> `MainViewModel.cs`, `InboxReviewSession.cs`, `LearnedProfile.cs`
-- Temp email TTL detection/expiry -> `OutlookConnectorService.cs` (`IsTransientEmail`, `ExpireTempEmailsAsync`), `TempRegistry.cs`, `MainViewModel.cs`
+- Temp email TTL detection/expiry -> `OutlookConnectorService.cs` (`IsTransientBySubjectKeyword`, `IsTransientBySenderPrefix`, `IsTransientEmail`, `ExpireTempEmailsAsync`), `TempRegistry.cs`, `MainViewModel.cs`
 - Dataset extraction/scoring outputs -> `OutlookConnectorService.cs`, `MainViewModel.cs`, `MainWindow.xaml`
 - Settings UI and new controls -> `MainWindow.xaml`, `MainViewModel.cs`
 - Version shown in UI -> `EmailManage.App.csproj`, `MainViewModel.cs`, `MainWindow.xaml`
