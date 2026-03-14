@@ -1979,23 +1979,13 @@ public sealed class OutlookConnectorService : IDisposable
     /// (auth codes, OTPs, device auth, shipping/booking confirmations)
     /// that should receive MailZen: Temp instead of a permanent Keep/Review/Delete label.
     /// </summary>
-    internal static bool IsTransientEmail(string senderEmail, string subject)
+    // Strong signal: subject keywords unambiguously identify transient email types.
+    // This check always wins — learning cannot suppress it, because the same sender
+    // (e.g. amazon.com) can send both transient confirmations and ads, and the subject
+    // is the reliable discriminator between the two.
+    internal static bool IsTransientBySubjectKeyword(string subject)
     {
-        var sender = (senderEmail ?? "").ToLowerInvariant();
-        var subj   = (subject      ?? "").ToLowerInvariant();
-
-        // Well-known transient notification sender patterns
-        string[] transientSenderFragments =
-        {
-            "signin-noreply@", "security-noreply@", "account-security@",
-            "noreply@accounts.", "noreply@notifications.", "noreply@alert.",
-            "otp@", "verify@", "verification@", "donotreply@",
-            "no-reply@", "auth@", "alerts@", "confirmation@"
-        };
-        foreach (var frag in transientSenderFragments)
-            if (sender.Contains(frag)) return true;
-
-        // Subject keyword patterns for transient email types
+        var subj = (subject ?? "").ToLowerInvariant();
         string[] transientSubjectKeywords =
         {
             "verification code", "verify your", "confirm your email", "confirm your account",
@@ -2013,9 +2003,30 @@ public sealed class OutlookConnectorService : IDisposable
         };
         foreach (var kw in transientSubjectKeywords)
             if (subj.Contains(kw)) return true;
-
         return false;
     }
+
+    // Weak signal: sender address prefix suggests a notification/noreply account.
+    // This can produce false positives (e.g. no-reply@amazon.com sends both confirmations
+    // and newsletters), so learning can suppress it via DoNotDeleteSenders.
+    internal static bool IsTransientBySenderPrefix(string senderEmail)
+    {
+        var sender = (senderEmail ?? "").ToLowerInvariant();
+        string[] transientSenderFragments =
+        {
+            "signin-noreply@", "security-noreply@", "account-security@",
+            "noreply@accounts.", "noreply@notifications.", "noreply@alert.",
+            "otp@", "verify@", "verification@", "donotreply@",
+            "no-reply@", "auth@", "alerts@", "confirmation@"
+        };
+        foreach (var frag in transientSenderFragments)
+            if (sender.Contains(frag)) return true;
+        return false;
+    }
+
+    // Combined check — kept for any callers that only need a yes/no answer.
+    internal static bool IsTransientEmail(string senderEmail, string subject)
+        => IsTransientBySenderPrefix(senderEmail) || IsTransientBySubjectKeyword(subject);
 
     private static int ApplyLearnedProfileAdjustments(int junkScore, string senderEmail, LearnedProfile? profile)
     {
@@ -2737,11 +2748,18 @@ public sealed class OutlookConnectorService : IDisposable
                         email["JunkScore"] = junkScore;
                         email["Recommendation"] = GetRecommendation(junkScore);
 
-                        // Override with Temp for short-lived transient emails (auth codes, OTPs, confirmations)
-                        // Skip override if sender is already in DoNotDeleteSenders (user confirmed Keep)
-                        var tempSender = ((string)email["SenderEmail"]).Trim().ToLowerInvariant();
-                        if (IsTransientEmail((string)email["SenderEmail"], (string)email["Subject"])
-                            && !(learnedProfile?.DoNotDeleteSenders.Contains(tempSender) == true))
+                        // Override with Temp for short-lived transient emails (auth codes, OTPs, confirmations).
+                        // Two-tier check:
+                        //   Subject keyword match  → strong signal, always applies (same sender may send ads AND confirmations;
+                        //                           the subject is the reliable discriminator between the two).
+                        //   Sender-prefix match    → weaker signal, suppressed if sender is in DoNotDeleteSenders
+                        //                           (user already taught the tool this sender should be Keep).
+                        var tempSender    = ((string)email["SenderEmail"]).Trim().ToLowerInvariant();
+                        var tempSubject   = (string)email["Subject"];
+                        bool subjectMatch = IsTransientBySubjectKeyword(tempSubject);
+                        bool senderMatch  = IsTransientBySenderPrefix((string)email["SenderEmail"]);
+                        bool senderExempt = learnedProfile?.DoNotDeleteSenders.Contains(tempSender) == true;
+                        if (subjectMatch || (senderMatch && !senderExempt))
                             email["Recommendation"] = "Temp";
                     }
 
