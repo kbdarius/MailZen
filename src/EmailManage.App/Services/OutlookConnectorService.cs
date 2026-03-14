@@ -2738,7 +2738,10 @@ public sealed class OutlookConnectorService : IDisposable
                         email["Recommendation"] = GetRecommendation(junkScore);
 
                         // Override with Temp for short-lived transient emails (auth codes, OTPs, confirmations)
-                        if (IsTransientEmail((string)email["SenderEmail"], (string)email["Subject"]))
+                        // Skip override if sender is already in DoNotDeleteSenders (user confirmed Keep)
+                        var tempSender = ((string)email["SenderEmail"]).Trim().ToLowerInvariant();
+                        if (IsTransientEmail((string)email["SenderEmail"], (string)email["Subject"])
+                            && !(learnedProfile?.DoNotDeleteSenders.Contains(tempSender) == true))
                             email["Recommendation"] = "Temp";
                     }
 
