@@ -882,6 +882,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _datasetIncludeRead = false;
     [ObservableProperty] private bool _applyOutlookCategories = false;
     [ObservableProperty] private string _datasetOutputDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+    [ObservableProperty] private int _defaultTempTtlHours = 48;
     [ObservableProperty] private string _datasetStatus = "Ready to start.";
     [ObservableProperty] private bool _isDatasetRunning = false;
     [ObservableProperty] private bool _datasetModeIsExtract = true;
@@ -935,15 +936,34 @@ public partial class MainViewModel : ObservableObject
             var session = BuildInboxReviewSession(path, account);
             session.Save();
 
+            // Build TempRegistry so Sync can expire tagged temp emails after TTL
+            var tempItems = session.Items
+                .Where(x => x.Recommendation.Equals("Temp", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (tempItems.Count > 0)
+            {
+                var registry = new TempRegistry { AccountKey = account.AccountKey };
+                var expiryUtc = DateTime.UtcNow.AddHours(DefaultTempTtlHours);
+                foreach (var ti in tempItems)
+                    if (!string.IsNullOrWhiteSpace(ti.EntryId))
+                        registry.Entries[ti.EntryId] = expiryUtc;
+                registry.Save();
+            }
+
             DatasetStatus = $"Categorized {session.TotalInboxItems} inbox email(s). MailZen also used read Inbox, Sent Items, and Deleted Items in the same date range as scoring context. Review them in Outlook by MailZen category, then click Sync Review + Relearn.";
-            InboxReviewSummary = $"Latest run for {account.DisplayName}: Keep {session.KeepCount}, Review {session.ReviewCount}, Delete {session.DeleteCount}.";
+            InboxReviewSummary = $"Latest run for {account.DisplayName}: Keep {session.KeepCount}, Review {session.ReviewCount}, Delete {session.DeleteCount}" +
+                (session.TempCount > 0 ? $", Temp {session.TempCount}" : "") + ".";
             StatusBarText = DatasetStatus;
             RefreshInboxReviewState();
+
+            var tempNote = session.TempCount > 0
+                ? $"\nTemp: {session.TempCount} (orange — needed short-term, auto-expires to Delete after {DefaultTempTtlHours}h on next Sync)\n"
+                : "";
 
             MessageBox.Show(
                 $"Inbox Review is ready for {account.DisplayName}.\n\n" +
                 $"Tagged: {session.TotalInboxItems} inbox email(s)\n" +
-                $"Keep: {session.KeepCount}\nReview: {session.ReviewCount}\nDelete: {session.DeleteCount}\n\n" +
+                $"Keep: {session.KeepCount}   Review: {session.ReviewCount}   Delete: {session.DeleteCount}{tempNote}\n" +
                 "MailZen also used read Inbox, Sent Items, and Deleted Items in the same date range as scoring context.\n\n" +
                 "Next: review those categories in Outlook, then come back and click Sync Review + Relearn.",
                 "Inbox Review Ready",
@@ -1081,9 +1101,27 @@ public partial class MainViewModel : ObservableObject
             session.LastSyncedAt = DateTime.UtcNow;
             session.Save();
 
+            // Sweep expired Temp emails — re-tag as MailZen: Delete in Outlook
+            int retaggedTemp = 0;
+            var tempRegistry = TempRegistry.Load(account.AccountKey);
+            var expiredEntryIds = tempRegistry.Entries
+                .Where(kv => kv.Value <= DateTime.UtcNow)
+                .Select(kv => kv.Key)
+                .ToList();
+            if (expiredEntryIds.Count > 0)
+            {
+                DatasetStatus = $"Re-tagging {expiredEntryIds.Count} expired Temp email(s) as Delete...";
+                retaggedTemp = await _connector.ExpireTempEmailsAsync(account.StoreID, expiredEntryIds);
+                foreach (var id in expiredEntryIds)
+                    tempRegistry.Entries.Remove(id);
+                tempRegistry.Save();
+                _log.Info("Temp TTL sweep: {Count} emails re-tagged as Delete.", retaggedTemp);
+            }
+
             InboxReviewSyncSummary =
                 $"Learned from {confirmedKeep + confirmedDelete} reviewed emails. " +
-                $"{confirmedKeep} matched in Inbox, {confirmedDelete} matched in Deleted Items, {unresolved} could not be matched in either folder.";
+                $"{confirmedKeep} matched in Inbox, {confirmedDelete} matched in Deleted Items, {unresolved} could not be matched in either folder." +
+                (retaggedTemp > 0 ? $" {retaggedTemp} expired Temp email(s) re-tagged as Delete." : "");
             DatasetStatus = InboxReviewSyncSummary + " Run Categorize Inbox again to apply the updated learning.";
             StatusBarText = DatasetStatus;
             RefreshInboxReviewState();
@@ -1527,9 +1565,10 @@ public partial class MainViewModel : ObservableObject
         }
 
         session.TotalInboxItems = session.Items.Count;
-        session.KeepCount = session.Items.Count(x => x.Recommendation.Equals("Keep", StringComparison.OrdinalIgnoreCase));
+        session.KeepCount   = session.Items.Count(x => x.Recommendation.Equals("Keep",   StringComparison.OrdinalIgnoreCase));
         session.ReviewCount = session.Items.Count(x => x.Recommendation.Equals("Review", StringComparison.OrdinalIgnoreCase));
         session.DeleteCount = session.Items.Count(x => x.Recommendation.Equals("Delete", StringComparison.OrdinalIgnoreCase));
+        session.TempCount   = session.Items.Count(x => x.Recommendation.Equals("Temp",   StringComparison.OrdinalIgnoreCase));
 
         return session;
     }
@@ -1756,6 +1795,7 @@ public partial class MainViewModel : ObservableObject
                 IncludeRead = DatasetIncludeRead,
                 ApplyOutlookCategories = ApplyOutlookCategories,
                 OutputDirectory = DatasetOutputDirectory,
+                DefaultTempTtlHours = DefaultTempTtlHours,
                 StartMonthsAgo = (int)Math.Round((DateTime.Today - DatasetStartDate).TotalDays / 30.0),
                 SelectedAccountNames = AvailableAccounts.Where(a => a.IsSelected).Select(a => a.Name).ToList()
             };
@@ -1797,6 +1837,9 @@ public partial class MainViewModel : ObservableObject
             DatasetOutputDirectory = string.IsNullOrWhiteSpace(settings.OutputDirectory)
                 ? Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
                 : settings.OutputDirectory;
+
+            if (settings.DefaultTempTtlHours > 0)
+                DefaultTempTtlHours = settings.DefaultTempTtlHours;
 
             if (settings.StartMonthsAgo > 0)
                 DatasetStartDate = DateTime.Today.AddMonths(-settings.StartMonthsAgo);
@@ -1863,6 +1906,7 @@ public class DatasetSettings
     public bool? IncludeRead { get; set; }
     public bool ApplyOutlookCategories { get; set; }
     public string? OutputDirectory { get; set; }
+    public int DefaultTempTtlHours { get; set; } = 48;
     public int StartMonthsAgo { get; set; } = 6;
     public List<string> SelectedAccountNames { get; set; } = new();
 }

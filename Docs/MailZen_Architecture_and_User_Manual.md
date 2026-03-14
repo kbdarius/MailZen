@@ -1,10 +1,10 @@
-# MailZen Architecture and User Manual
+﻿# MailZen Architecture and User Manual
 
 ## Document Control
 - Product: MailZen
-- Software Version: `1.3.1`
-- Document Version: `1.3.1`
-- Last Updated: `2026-03-12`
+- Software Version: `1.4.0`
+- Document Version: `1.4.0`
+- Last Updated: `2026-03-14`
 - Repository Path: `src/EmailManage.App`
 
 Version sync rule:
@@ -33,7 +33,7 @@ Audience:
 ## 2. Solution Overview
 MailZen is a Windows WPF desktop app that helps users clean Outlook email using:
 - Rule-based dataset scoring.
-- Outlook-first Inbox Review with `MailZen: Keep`, `MailZen: Review`, and `MailZen: Delete` categories.
+- Outlook-first Inbox Review with `MailZen: Keep`, `MailZen: Review`, `MailZen: Delete`, and `MailZen: Temp` categories.
 - Internal scoring context from read Inbox, Sent Items, and Deleted Items within the selected date range.
 - Review-and-relearn feedback based on what the user ultimately keeps in Inbox or deletes in Outlook.
 - Advanced export and CSV re-score tools for analysis and backtesting.
@@ -102,10 +102,11 @@ graph TB
 ## 4. Repository and File Map
 Top-level:
 - `src/EmailManage.sln`: Solution entry.
-- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.3.1`).
+- `src/EmailManage.App/EmailManage.App.csproj`: Dependencies, build metadata, product version (`1.4.0`).
 - `MailZen.bat`: Build-and-run helper that publishes a fresh root `MailZen.exe`.
 - `Docs/`: Product documentation.
 - `Docs/MailZen.wiki/`: Local clone of the companion GitHub wiki repo for quick-start project pages and simplified Mermaid onboarding diagrams that must stay aligned with this manual.
+- `.vscode/`: Personal editor/export settings are intentionally not source-controlled project state.
 
 Important app files:
 - `src/EmailManage.App/App.xaml`: Resource dictionary and converters.
@@ -129,6 +130,7 @@ Models:
 - `LearnedProfile.cs`: Persistent personalization profile.
 - `ConnectionResult.cs`: Connect status and account list.
 - `ColorTestEmailItem.cs`: Color test preview item.
+- `TempRegistry.cs`: Per-account TTL registry for `MailZen: Temp` tagged emails; auto-expires entries to `MailZen: Delete` during Sync.
 
 ---
 
@@ -177,8 +179,10 @@ sequenceDiagram
     VM->>OCS: ExportDataset(inbox review mode)
     OCS->>OCS: Scan read Inbox + Sent + Deleted as scoring context
     OCS->>OCS: Apply categories only to target Inbox rows
+    OCS->>OCS: Override transient/one-time emails to MailZen: Temp (orange)
     OCS-->>VM: scored CSV + Outlook categories for review targets
     VM->>S: Save latest inbox_review_session.json
+    VM->>TempRegistry: Build and persist TTL entries for Temp-tagged emails
     VM-->>UI: Outlook review ready
 ```
 
@@ -196,6 +200,7 @@ sequenceDiagram
     VM->>VM: Match by EntryID when available, then normalized sender/subject/time
     VM->>LP: RegisterConfirmedKeep / RegisterConfirmedDelete
     LP-->>VM: Save learned_profile.json
+    VM->>TempRegistry: Sweep expired Temp entries, re-tag as MailZen: Delete
     VM-->>UI: Learning summary + rerun prompt
 ```
 
@@ -245,6 +250,7 @@ graph TD
 - Latest inbox review session: `%LOCALAPPDATA%\EmailManage\accounts\<accountKey>\inbox_review_session.json`
 - Dataset defaults: `%LOCALAPPDATA%\EmailManage\dataset_defaults.json`
 - Window layout: `%LOCALAPPDATA%\EmailManage\window_state.json`
+- Temp TTL registry: `%LOCALAPPDATA%\EmailManage\accounts\<accountKey>\temp_registry.json`
 
 ### 7.2 LearnedProfile Schema
 `LearnedProfile` fields:
@@ -274,6 +280,7 @@ Feedback behavior:
 - `KeepCount`
 - `ReviewCount`
 - `DeleteCount`
+- `TempCount`
 - `LastSyncedAt`
 - `Items: List<InboxReviewSessionItem>`
 
@@ -285,7 +292,18 @@ Each `InboxReviewSessionItem` stores:
 - `Recommendation`
 - `JunkScore`
 
-### 7.4 Dataset CSV Contract
+### 7.4 TempRegistry Schema
+`TempRegistry` fields:
+- `AccountKey`  matches the account key used in the directory path.
+- `Entries: Dictionary<string, DateTime>`  maps `EntryId` (case-insensitive) to UTC expiry time.
+
+Behavior:
+- Rebuilt fresh on each `Categorize Inbox` run; entries from prior runs are cleared.
+- Expiry time = `DateTime.UtcNow + DefaultTempTtlHours` (default 48 h, user-configurable in Settings > General).
+- During `Sync Review + Relearn`, expired entries (`ExpiryUtc <= UtcNow`) are detected; the corresponding Outlook items are re-tagged from `MailZen: Temp` to `MailZen: Delete`, then removed from the registry.
+- Stored as JSON; resilient to missing file (returns empty registry on first load).
+
+### 7.5 Dataset CSV Contract
 Required columns are validated by `OutlookConnectorService.RequiredCsvColumns`.
 For Inbox Review runs, the saved CSV contains only the Inbox emails that were actually tagged for review; read Inbox, Sent Items, and Deleted Items that were used only as scoring context are kept internal.
 Output scored columns append:
@@ -304,6 +322,7 @@ Current implementation is heuristic and code-defined (not user-tunable in UI):
 1. `DoNotDeleteSenders` caps future scores toward `Keep`
 2. Confirmed delete sender/domain counts push future scores toward `Delete`
 - Recommendation thresholds map score to Keep/Review/Delete.
+- Transient/one-time emails are detected by `IsTransientEmail(senderEmail, subject)` (internal static, `OutlookConnectorService`). Pattern matching checks sender-address prefixes (e.g. `otp@`, `verify@`, `signin-noreply@`, `no-reply@`) and subject keywords (e.g. `verification code`, `one-time password`, `device authorization`, `booking confirmation`). Matching items are overridden to `MailZen: Temp` regardless of the computed junk score.
 
 Primary file:
 - `src/EmailManage.App/Services/OutlookConnectorService.cs`
@@ -362,6 +381,7 @@ If you need to change X, start in Y:
 - AI prompt/classification behavior -> `OllamaClient.cs`
 - Learn logic and profile persistence -> `LearningService.cs`, `LearnedProfile.cs`
 - Inbox Review session + sync/relearn flow -> `MainViewModel.cs`, `InboxReviewSession.cs`, `LearnedProfile.cs`
+- Temp email TTL detection/expiry -> `OutlookConnectorService.cs` (`IsTransientEmail`, `ExpireTempEmailsAsync`), `TempRegistry.cs`, `MainViewModel.cs`
 - Dataset extraction/scoring outputs -> `OutlookConnectorService.cs`, `MainViewModel.cs`, `MainWindow.xaml`
 - Settings UI and new controls -> `MainWindow.xaml`, `MainViewModel.cs`
 - Version shown in UI -> `EmailManage.App.csproj`, `MainViewModel.cs`, `MainWindow.xaml`
@@ -398,6 +418,12 @@ Recommended semantic versioning:
 - Minor: backward-compatible feature addition (`1.2.0 -> 1.3.0`)
 - Major: breaking change (`1.x -> 2.0.0`)
 
+### 13.3 Documentation Tooling Notes
+- The product source of truth remains the application code, this manual, and the aligned GitHub wiki pages.
+- Personal VS Code settings for Markdown export are local environment details and are not part of the tracked MailZen software version.
+- Generated HTML exports and working screenshot captures are documentation artifacts, not product binaries or release metadata.
+- If Mermaid HTML export differs across machines, treat that as a local documentation-tooling issue first and verify the editor extension setup separately from the MailZen app version.
+
 ---
 
 ## 14. User Manual
@@ -417,13 +443,20 @@ Recommended semantic versioning:
 1. In the `Inbox Review` tab, select exactly one Outlook account.
 2. Choose the date range and decide whether read Inbox emails should also be tagged for review.
 3. Click `Categorize Inbox`.
-4. MailZen uses read Inbox, Sent Items, and Deleted Items in the same date range as scoring context, then applies `MailZen: Keep`, `MailZen: Review`, and `MailZen: Delete` only to the target Inbox emails.
+4. MailZen uses read Inbox, Sent Items, and Deleted Items in the same date range as scoring context, then applies four categories to the target Inbox emails:
+   - **MailZen: Keep** (green) - high-confidence legitimate mail.
+   - **MailZen: Review** (yellow) - borderline mail requiring manual decision.
+   - **MailZen: Delete** (red) - high-confidence junk/bulk to delete.
+   - **MailZen: Temp** (orange) - transient/one-time emails (verification codes, shipping confirmations, device-auth notices) needed briefly then safe to delete. These items expire automatically based on the TTL set in Settings > General (default: 48 hours).
 5. Open Outlook and review the tagged Inbox directly:
    - filter `MailZen: Keep` and delete any false keeps
    - filter `MailZen: Review` and decide keep vs delete
    - filter `MailZen: Delete` and leave false deletes in Inbox
+   - filter `MailZen: Temp` to see all detected transient emails - no action needed; MailZen will auto-expire them on the next Sync
 6. Return to MailZen and click `Sync Review + Relearn`.
-7. MailZen compares the saved review session against the current Inbox and Deleted Items, updates learning, and tells you to run `Categorize Inbox` again when you want refreshed categories.
+7. MailZen compares the saved review session against the current Inbox and Deleted Items, updates learning, sweeps any expired `MailZen: Temp` emails (re-tagging them as `MailZen: Delete`), and tells you to run `Categorize Inbox` again when you want refreshed categories.
+
+**Temp Email TTL Setting:** In Settings > General, the "Temp Email Expiry" field controls how many hours a `MailZen: Temp` email is valid before being re-tagged as `MailZen: Delete` on the next Sync. Click "Save Defaults" to persist the value.
 
 ### 14.4 Advanced Tools
 Mode A: Extract from Outlook

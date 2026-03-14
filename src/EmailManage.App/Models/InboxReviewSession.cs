@@ -21,6 +21,7 @@ public class InboxReviewSession
     public int KeepCount { get; set; }
     public int ReviewCount { get; set; }
     public int DeleteCount { get; set; }
+    public int TempCount { get; set; }
     public DateTime? LastSyncedAt { get; set; }
     public List<InboxReviewSessionItem> Items { get; set; } = new();
 

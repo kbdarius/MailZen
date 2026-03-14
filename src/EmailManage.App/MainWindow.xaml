@@ -372,6 +372,28 @@
                         <!-- Separator -->
                         <Border Height="1" Background="#E5E7EB" Margin="0,16,0,16"/>
 
+                        <!-- ═══ Temp Email TTL ═══ -->
+                        <TextBlock Text="⏱ Temp Email Expiry" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                        <TextBlock Text="How long MailZen: Temp tagged emails are considered valid before being automatically re-tagged as MailZen: Delete during your next Sync Review + Relearn."
+                                   TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,4">
+                            <TextBox Text="{Binding DefaultTempTtlHours, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="60" FontSize="13" Padding="6,4"
+                                     VerticalContentAlignment="Center" Margin="0,0,8,0"
+                                     ToolTip="Enter the number of hours before Temp emails expire (e.g. 24, 48, 72)."/>
+                            <TextBlock Text="hours  (e.g. 24 = 1 day, 48 = 2 days, 72 = 3 days)"
+                                       FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Button Content="💾 Save Defaults" Style="{StaticResource SecondaryButton}"
+                                Command="{Binding SaveDatasetDefaultsCommand}" HorizontalAlignment="Left"
+                                Margin="0,8,0,0"
+                                ToolTip="Save current dataset and Temp TTL settings as defaults for next launch."/>
+
+                        <!-- Separator -->
+                        <Border Height="1" Background="#E5E7EB" Margin="0,16,0,16"/>
+
                         <!-- ═══ Clear MailZen Categories ═══ -->
                         <TextBlock Text="🗂 Clear MailZen Categories — Inbox" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>

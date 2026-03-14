@@ -1974,6 +1974,49 @@ public sealed class OutlookConnectorService : IDisposable
         return "Delete";
     }
 
+    /// <summary>
+    /// Returns true if an email is a short-lived transient message
+    /// (auth codes, OTPs, device auth, shipping/booking confirmations)
+    /// that should receive MailZen: Temp instead of a permanent Keep/Review/Delete label.
+    /// </summary>
+    internal static bool IsTransientEmail(string senderEmail, string subject)
+    {
+        var sender = (senderEmail ?? "").ToLowerInvariant();
+        var subj   = (subject      ?? "").ToLowerInvariant();
+
+        // Well-known transient notification sender patterns
+        string[] transientSenderFragments =
+        {
+            "signin-noreply@", "security-noreply@", "account-security@",
+            "noreply@accounts.", "noreply@notifications.", "noreply@alert.",
+            "otp@", "verify@", "verification@", "donotreply@",
+            "no-reply@", "auth@", "alerts@", "confirmation@"
+        };
+        foreach (var frag in transientSenderFragments)
+            if (sender.Contains(frag)) return true;
+
+        // Subject keyword patterns for transient email types
+        string[] transientSubjectKeywords =
+        {
+            "verification code", "verify your", "confirm your email", "confirm your account",
+            "authorization code", "one-time password", "one-time code", "your otp",
+            "access code", "security code", "temporary code",
+            "sign in attempt", "sign-in attempt", "new sign-in", "new signin",
+            "login attempt", "login code", "device authorization", "device auth",
+            "your code is", "your pin", "enter this code",
+            "shipping confirmation", "your order has shipped", "out for delivery",
+            "delivery attempt", "package delivered", "your package",
+            "booking confirmation", "reservation confirmation", "your reservation",
+            "your appointment", "appointment confirmation",
+            "temporary password", "reset your password", "password reset",
+            "account authorization needed"
+        };
+        foreach (var kw in transientSubjectKeywords)
+            if (subj.Contains(kw)) return true;
+
+        return false;
+    }
+
     private static int ApplyLearnedProfileAdjustments(int junkScore, string senderEmail, LearnedProfile? profile)
     {
         if (profile == null)
@@ -2006,20 +2049,22 @@ public sealed class OutlookConnectorService : IDisposable
         try
         {
             dynamic categories = ns.Categories;
-            bool hasKeep = false, hasReview = false, hasDelete = false;
+            bool hasKeep = false, hasReview = false, hasDelete = false, hasTemp = false;
 
             foreach (dynamic cat in categories)
             {
                 string name = cat.Name;
-                if (name == "MailZen: Keep") hasKeep = true;
+                if (name == "MailZen: Keep")   hasKeep   = true;
                 else if (name == "MailZen: Review") hasReview = true;
                 else if (name == "MailZen: Delete") hasDelete = true;
+                else if (name == "MailZen: Temp")   hasTemp   = true;
             }
 
-            // OlCategoryColor enum: 5 = Green, 14 = Yellow, 1 = Red
-            if (!hasKeep) categories.Add("MailZen: Keep", 5);
+            // OlCategoryColor enum: 5=Green, 14=Yellow, 1=Red, 19=Orange
+            if (!hasKeep)   categories.Add("MailZen: Keep",   5);
             if (!hasReview) categories.Add("MailZen: Review", 14);
             if (!hasDelete) categories.Add("MailZen: Delete", 1);
+            if (!hasTemp)   categories.Add("MailZen: Temp",   19);
         }
         catch { /* Categories API not available on some stores */ }
     }
@@ -2063,10 +2108,11 @@ public sealed class OutlookConnectorService : IDisposable
 
                     string newCategory = recommendation switch
                     {
-                        "Keep" => "MailZen: Keep",
+                        "Keep"   => "MailZen: Keep",
                         "Review" => "MailZen: Review",
                         "Delete" => "MailZen: Delete",
-                        _ => ""
+                        "Temp"   => "MailZen: Temp",
+                        _        => ""
                     };
 
                     if (!string.IsNullOrEmpty(newCategory))
@@ -2092,6 +2138,76 @@ public sealed class OutlookConnectorService : IDisposable
         }
 
         progress.Report($"Labelling complete: {applied} tagged, {errors} skipped.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Temp Email TTL Expiry
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Re-tags Inbox emails (by EntryId) whose Temp TTL has expired from
+    /// MailZen: Temp to MailZen: Delete. Returns count of successfully re-tagged items.
+    /// </summary>
+    public async Task<int> ExpireTempEmailsAsync(string storeId, IReadOnlyList<string> entryIds)
+    {
+        if (entryIds.Count == 0) return 0;
+
+        int retagged = 0;
+        await Task.Run(() =>
+        {
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    RetryMessageFilter.Register();
+                    dynamic app = GetActiveComObject("Outlook.Application");
+                    dynamic ns  = app.GetNamespace("MAPI");
+                    ns.Logon("", "", false, false);
+
+                    EnsureCategoriesExist(ns);
+
+                    foreach (var entryId in entryIds)
+                    {
+                        try
+                        {
+                            dynamic mail = ns.GetItemFromID(entryId);
+                            if (mail == null) continue;
+                            try
+                            {
+                                string existing = mail.Categories ?? "";
+                                var cats = existing
+                                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(c => c.Trim())
+                                    .Where(c => c != "MailZen: Temp")
+                                    .ToList();
+                                cats.Add("MailZen: Delete");
+                                mail.Categories = string.Join(", ", cats);
+                                mail.Save();
+                                retagged++;
+                            }
+                            finally { Marshal.ReleaseComObject(mail); }
+                        }
+                        catch { /* item may no longer exist in Inbox — skip */ }
+                    }
+
+                    if (ns  != null) Marshal.ReleaseComObject(ns);
+                    if (app != null) Marshal.ReleaseComObject(app);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "ExpireTempEmailsAsync failed.");
+                }
+                finally
+                {
+                    RetryMessageFilter.Revoke();
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(TimeSpan.FromMinutes(2));
+        });
+
+        return retagged;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -2620,6 +2736,10 @@ public sealed class OutlookConnectorService : IDisposable
                         email["SenderReputation"] = senderRep;
                         email["JunkScore"] = junkScore;
                         email["Recommendation"] = GetRecommendation(junkScore);
+
+                        // Override with Temp for short-lived transient emails (auth codes, OTPs, confirmations)
+                        if (IsTransientEmail((string)email["SenderEmail"], (string)email["Subject"]))
+                            email["Recommendation"] = "Temp";
                     }
 
                     progress.Report("Pass 2 complete: All emails scored.");
