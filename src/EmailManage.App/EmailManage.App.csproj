@@ -12,16 +12,17 @@
 
     <!-- App metadata -->
     <Product>MailZen</Product>
-    <Description>Smart Email Cleanup — AI-powered Outlook companion</Description>
+    <Description>Conversational Outlook Classic search with a private local index</Description>
     <Company>MailZen</Company>
     <Copyright>Copyright © 2026</Copyright>
-    <Version>1.4.1</Version>
+    <Version>2.0.8</Version>
     <ApplicationIcon>Resources\mailzen.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.8" />
     <PackageReference Include="Serilog" Version="4.2.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
   </ItemGroup>

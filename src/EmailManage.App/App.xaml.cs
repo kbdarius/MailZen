@@ -10,7 +10,7 @@ namespace EmailManage;
 /// </summary>
 public partial class App : Application
 {
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         // Global exception handlers
         DispatcherUnhandledException += App_DispatcherUnhandledException;
@@ -24,8 +24,14 @@ public partial class App : Application
 
             base.OnStartup(e);
 
+            if (e.Args.Any(arg => string.Equals(arg, "--sync", StringComparison.OrdinalIgnoreCase)))
+            {
+                await RunHeadlessSyncAsync(ParseDateArgument(e.Args, "--sync-from"), ParseDateArgument(e.Args, "--sync-to"), ParseStringArgument(e.Args, "--sync-account"));
+                return;
+            }
+
             // Create and show main window manually to catch XAML errors
-            var mainWindow = new MainWindow();
+            var mainWindow = new SearchWindow();
             mainWindow.Show();
             DiagnosticLogger.Instance.Info("MainWindow shown successfully.");
         }
@@ -35,6 +41,26 @@ public partial class App : Application
             MessageBox.Show($"Startup error:\n\n{ex}", "EmailManage - Startup Error",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private static async Task RunHeadlessSyncAsync(DateTime? fromUtc, DateTime? toUtc, string? account)
+    {
+        var code = await new HeadlessSyncRunner().RunAsync(fromUtc, toUtc, account);
+        DiagnosticLogger.Instance.Info("Headless sync completed with exit code {ExitCode}", (int)code);
+        Current.Shutdown((int)code);
+    }
+
+    private static DateTime? ParseDateArgument(string[] args, string name)
+    {
+        var argument = args.FirstOrDefault(arg => arg.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase));
+        var value = argument is null ? null : argument.Substring(name.Length + 1);
+        return DateTime.TryParse(value, out var parsed) ? DateTime.SpecifyKind(parsed, DateTimeKind.Local).ToUniversalTime() : null;
+    }
+
+    private static string? ParseStringArgument(string[] args, string name)
+    {
+        var argument = args.FirstOrDefault(arg => arg.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase));
+        return argument is null ? null : argument.Substring(name.Length + 1);
     }
 
     private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

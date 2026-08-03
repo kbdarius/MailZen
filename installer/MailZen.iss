@@ -3,10 +3,10 @@
 ;
 ; Build steps:
 ;   1. Run build-installer.ps1  (publishes app + compiles this script)
-;   2. Resulting installer: installer\MailZenSetup.exe
+;   2. Resulting installer: installer\MailZenSetup-2.0.8.exe
 
 #define MyAppName "MailZen"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "2.0.8"
 #define MyAppPublisher "MailZen"
 #define MyAppURL "https://github.com/mailzen"
 #define MyAppExeName "MailZen.exe"
@@ -21,7 +21,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\installer
-OutputBaseFilename=MailZenSetup
+OutputBaseFilename=MailZenSetup-2.0.8
 SetupIconFile=..\src\EmailManage.App\Resources\mailzen.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -41,12 +41,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; All published files from the self-contained output
-Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\publish-current-2.0.8\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Smart Email Cleanup"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Conversational Outlook Search"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; Comment: "Smart Email Cleanup"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; Comment: "Conversational Outlook Search"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

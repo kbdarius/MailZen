@@ -1,8 +1,8 @@
-# MailZen
+# MailZen 2.0
 
-Smart email cleanup for Outlook Desktop — powered by a local AI that learns what you delete.
+Conversational Outlook Classic search backed by a private local index.
 
-MailZen is a companion tool that watches how you handle email, learns your patterns using a private on-device AI (Ollama), and creates native Outlook rules to automate future cleanup. Nothing leaves your computer.
+MailZen indexes selected Outlook accounts into `%LOCALAPPDATA%\\MailZen\\MailZen.db`, then lets you describe the email you remember in natural language. Local Search Only works offline; optional OpenAI Fast (`gpt-4o-mini`) and Smart (`gpt-5.6-luna`) modes interpret and rerank a bounded candidate set.
 
 ---
 
@@ -48,7 +48,8 @@ New users don't need .NET installed — we publish a **self-contained** build th
 
 - Windows 10 or 11 (64-bit)
 - Microsoft Outlook Desktop (configured with at least one email account)
-- Ollama — **MailZen will offer to install it automatically** on first launch
+- Outlook Classic Desktop with the user signed in to Windows
+- OpenAI API key only for optional AI-assisted search; keys are stored in Windows Credential Manager
 
 No .NET installation required.
 
@@ -70,5 +71,7 @@ No .NET installation required.
 ## First-Launch Experience (for new users)
 
 1. **Outlook connects automatically** — MailZen finds the running Outlook instance.
-2. **AI setup prompt appears** — if Ollama isn't installed, an orange card explains what it is and offers a one-click install (~2.5 GB download). Everything runs locally.
+2. Select the Outlook accounts to index and choose Local Search Only or an AI-assisted model profile.
+
+MailZen does not send, move, delete, categorize, or create rules for messages during search or synchronization. Legacy Outlook categories and rules from MailZen 1.x are left untouched.
 3. **Learn → Triage → Review → Automate** — the wizard walks them through each step.
