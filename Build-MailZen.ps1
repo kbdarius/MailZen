@@ -57,7 +57,7 @@ Invoke-Checked 'dotnet' @('test', 'tests\EmailManage.Tests\EmailManage.Tests.csp
 Invoke-Checked 'dotnet' @('publish', $project, '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-o', $publishRoot)
 
 $iss = Join-Path $root 'installer\MailZen.iss'
-$iscc = $isccCandidates[0]
+$iscc = @($isccCandidates)[0]
 Invoke-Checked $iscc @('/Q', "/DMyAppVersion=$version", "/DMyAppOutputBaseFilename=MailZenSetup", $iss)
 
 $builtInstaller = Join-Path $root 'installer\MailZenSetup.exe'
