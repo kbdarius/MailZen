@@ -22,8 +22,9 @@ if ($version -notmatch '^\d+\.\d+\.\d+$') {
     throw "The project version '$version' is not a three-part release version."
 }
 
-$buildRoot = Join-Path $root 'build'
+$buildRoot = Join-Path $env:TEMP "MailZen-Build-$version"
 $publishRoot = Join-Path $buildRoot 'publish'
+$installerOutput = Join-Path $env:TEMP "MailZen-Inno-$version"
 $rootAppExe = Join-Path $root "MailZen-$version.exe"
 $rootInstallerExe = Join-Path $root "MailZenSetup-$version.exe"
 
@@ -53,14 +54,16 @@ Remove-IfExists $buildRoot
 New-Item -ItemType Directory -Path $publishRoot -Force | Out-Null
 
 Invoke-Checked 'dotnet' @('build', 'src\EmailManage.sln', '-c', 'Release')
-Invoke-Checked 'dotnet' @('test', 'tests\EmailManage.Tests\EmailManage.Tests.csproj', '-c', 'Release', '--no-restore')
+Invoke-Checked 'dotnet' @('test', 'tests\EmailManage.Tests\EmailManage.Tests.csproj', '-c', 'Release')
 Invoke-Checked 'dotnet' @('publish', $project, '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-o', $publishRoot)
 
 $iss = Join-Path $root 'installer\MailZen.iss'
 $iscc = @($isccCandidates)[0]
-Invoke-Checked $iscc @('/Q', "/DMyAppVersion=$version", "/DMyAppOutputBaseFilename=MailZenSetup", $iss)
+Remove-IfExists $installerOutput
+New-Item -ItemType Directory -Path $installerOutput -Force | Out-Null
+Invoke-Checked $iscc @('/Q', "/O$installerOutput", "/DMyAppVersion=$version", "/DMyAppOutputBaseFilename=MailZenSetup", "/DMyAppSourceDir=$publishRoot", $iss)
 
-$builtInstaller = Join-Path $root 'installer\MailZenSetup.exe'
+$builtInstaller = Join-Path $installerOutput 'MailZenSetup.exe'
 if (-not (Test-Path -LiteralPath $builtInstaller)) {
     throw "Inno Setup completed but did not create $builtInstaller."
 }
@@ -76,7 +79,7 @@ Remove-IfExists $buildRoot
 Get-ChildItem -LiteralPath $root -Recurse -Directory -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -notmatch '\.git\\' -and $_.Name -in @('bin', 'obj') } |
     Sort-Object { $_.FullName.Length } -Descending |
-    Remove-Item -Recurse -Force
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 $nestedExecutables = Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.exe' |
     Where-Object { $_.FullName -notmatch '\.git\\' -and $_.DirectoryName -ne $root }
@@ -87,7 +90,7 @@ if ($nestedExecutables) {
 
 $rootExecutables = @(Get-ChildItem -LiteralPath $root -File -Filter '*.exe' | Select-Object -ExpandProperty Name)
 $expected = @("MailZen-$version.exe", "MailZenSetup-$version.exe")
-if (@($rootExecutables | Sort-Object) -cne @($expected | Sort-Object)) {
+if ((@($rootExecutables | Sort-Object) -join '|') -cne (@($expected | Sort-Object) -join '|')) {
     throw "Expected exactly $($expected -join ', ') in the repository root, found: $($rootExecutables -join ', ')"
 }
 

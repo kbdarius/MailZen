@@ -7,10 +7,13 @@
 
 #define MyAppName "MailZen"
 #ifndef MyAppVersion
-#define MyAppVersion "2.0.9"
+#define MyAppVersion "2.0.10"
 #endif
 #ifndef MyAppOutputBaseFilename
 #define MyAppOutputBaseFilename "MailZenSetup"
+#endif
+#ifndef MyAppSourceDir
+#define MyAppSourceDir "..\build\publish"
 #endif
 #define MyAppPublisher "MailZen"
 #define MyAppURL "https://github.com/mailzen"
@@ -46,7 +49,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; All published files from the self-contained output
-Source: "..\build\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Conversational Outlook Search"

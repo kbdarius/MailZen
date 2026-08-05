@@ -17,7 +17,7 @@ public interface IOutlookOpenService
 
 public interface IEmailIndexService
 {
-    Task SyncAsync(IReadOnlySet<string> accountIds, DateTime? sinceUtc, DateTime? beforeUtc = null, IProgress<string>? progress = null, CancellationToken cancellationToken = default);
+    Task SyncAsync(IReadOnlySet<string> accountIds, DateTime? sinceUtc, DateTime? beforeUtc = null, IProgress<string>? progress = null, CancellationToken cancellationToken = default, bool includeSentItems = false);
 }
 
 public interface ILocalSearchService

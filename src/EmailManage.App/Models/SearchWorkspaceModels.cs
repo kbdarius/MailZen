@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows.Media;
 
 namespace EmailManage.Models;
 
@@ -30,5 +31,9 @@ public sealed class SearchResultRow
     public string Received { get; init; } = string.Empty;
     public string Excerpt { get; init; } = string.Empty;
     public string Explanation { get; init; } = string.Empty;
+    public string AccountId { get; init; } = string.Empty;
+    public string SourceLabel { get; init; } = "Inbox";
+    public bool IsSent { get; init; }
+    public Brush SourceBadgeBrush => IsSent ? Brushes.DarkOrange : Brushes.SlateBlue;
     public IndexedMessage Message { get; init; } = null!;
 }

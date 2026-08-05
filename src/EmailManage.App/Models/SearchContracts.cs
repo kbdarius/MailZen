@@ -8,7 +8,8 @@ public sealed record SearchScope(
     DateTime? ReceivedAfterUtc = null,
     DateTime? ReceivedBeforeUtc = null,
     bool? IsUnread = null,
-    bool? HasAttachments = null);
+    bool? HasAttachments = null,
+    bool IncludeSentItems = false);
 
 public enum SearchMode { ConversationalAi, SmartLocal, Boolean }
 
@@ -41,7 +42,8 @@ public sealed record IndexedMessage(
     bool IsUnread,
     bool HasAttachments,
     string AttachmentNames,
-    string? ConversationId = null);
+    string? ConversationId = null,
+    string FolderType = "Inbox");
 
 public sealed record SearchResult(IndexedMessage Message, double Score, string Excerpt, string? Explanation = null);
 

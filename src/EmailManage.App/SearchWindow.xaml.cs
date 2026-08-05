@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Globalization;
+using System.Windows.Data;
 using EmailManage.Models;
 using EmailManage.Services;
 
@@ -46,15 +47,42 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
     private bool _isBusy;
     private string _activityStatus = string.Empty;
     private string _dailySyncTime = "02:00";
+    private bool _includeSentItems;
+    private bool _groupResultsByAccount;
     private readonly OpenAiCredentialStore _credentials = new();
+    private readonly MailZenPreferencesStore _preferences = new();
     public ObservableCollection<SearchAccountRow> Accounts { get; } = new();
     public ObservableCollection<SearchResultRow> Results { get; } = new();
+    public ICollectionView ResultsView { get; }
     public string Query { get => _query; set { _query = value; OnChanged(); } }
     public string AppVersion { get; } = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "2.0.0";
     public string Status { get => _status; private set { _status = value; OnChanged(); } }
     public bool IsBusy { get => _isBusy; private set { _isBusy = value; OnChanged(); } }
     public string ActivityStatus { get => _activityStatus; private set { _activityStatus = value; OnChanged(); } }
     public string DailySyncTime { get => _dailySyncTime; set { _dailySyncTime = value; OnChanged(); } }
+    public bool IncludeSentItems
+    {
+        get => _includeSentItems;
+        set
+        {
+            if (_includeSentItems == value) return;
+            _includeSentItems = value;
+            OnChanged();
+            _ = _preferences.SetIncludeSentItemsAsync(value);
+            ResultsView?.Refresh();
+        }
+    }
+    public bool GroupResultsByAccount
+    {
+        get => _groupResultsByAccount;
+        set
+        {
+            if (_groupResultsByAccount == value) return;
+            _groupResultsByAccount = value;
+            OnChanged();
+            ApplyResultViewState();
+        }
+    }
     public string ResultSummary { get => _resultSummary; private set { _resultSummary = value; OnChanged(); } }
     public string ScopeSummary { get => _scopeSummary; private set { _scopeSummary = value; OnChanged(); } }
     public string IndexSummary { get => _indexSummary; private set { _indexSummary = value; OnChanged(); } }
@@ -96,6 +124,8 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
 
     public SearchWorkspaceViewModel()
     {
+        ResultsView = new ListCollectionView(Results);
+        ResultsView.Filter = item => IncludeSentItems || item is not SearchResultRow row || !row.IsSent;
         _selectedSearchMode = SearchModeOptions[0];
         SetDateRange(DateTime.Today.AddYears(-1), DateTime.Today);
         SearchCommand = new AsyncCommand(RunSearchAsync);
@@ -128,6 +158,7 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
     {
         try
         {
+            IncludeSentItems = await _preferences.GetIncludeSentItemsAsync();
             foreach (var account in await _outlook.GetAccountsAsync()) Accounts.Add(new SearchAccountRow(account));
             await RefreshAccountCoverageAsync();
             Status = $"{Accounts.Count} Outlook account(s) available.";
@@ -142,7 +173,7 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
         Status = "Syncing selected accounts…";
         var fromUtc = DateTime.SpecifyKind(IndexFromDate.Value.Date, DateTimeKind.Local).ToUniversalTime();
         var toUtc = DateTime.SpecifyKind(IndexToDate.Value.Date.AddDays(1), DateTimeKind.Local).ToUniversalTime();
-        await new EmailIndexCoordinator(_outlook, _database).SyncAsync(ids, fromUtc, toUtc, new Progress<string>(s => Status = s));
+        await new EmailIndexCoordinator(_outlook, _database).SyncAsync(ids, fromUtc, toUtc, new Progress<string>(s => Status = s), includeSentItems: IncludeSentItems);
         Status = $"Sync complete. Indexed Outlook messages from {IndexFromDate:MMM d, yyyy} through {IndexToDate:MMM d, yyyy}.";
         await RefreshAccountCoverageAsync();
         await RefreshCoverageAsync();
@@ -163,7 +194,7 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
                 ? $"Syncing selected accounts from {sinceUtc.ToLocalTime():g}\u2026"
                 : "No prior checkpoint found; syncing the last two days for the selected accounts\u2026";
             await new EmailIndexCoordinator(_outlook, _database).SyncAsync(ids, sinceUtc, null,
-                new Progress<string>(s => Status = s));
+                new Progress<string>(s => Status = s), includeSentItems: IncludeSentItems);
             Status = "New email sync complete.";
             await RefreshAccountCoverageAsync();
             await RefreshCoverageAsync();
@@ -224,7 +255,7 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
         var local = new LocalSearchService(_database);
         var afterUtc = DateTime.SpecifyKind(SearchFromDate, DateTimeKind.Local).ToUniversalTime();
         var beforeUtc = DateTime.SpecifyKind(SearchToDate.AddDays(1), DateTimeKind.Local).ToUniversalTime();
-        var scope = new SearchScope(ids, ReceivedAfterUtc: afterUtc, ReceivedBeforeUtc: beforeUtc);
+        var scope = new SearchScope(ids, ReceivedAfterUtc: afterUtc, ReceivedBeforeUtc: beforeUtc, IncludeSentItems: IncludeSentItems);
         var request = new SearchRequest(Query, scope, 50, SelectedSearchMode.Mode);
         IReadOnlyList<SearchResult> results;
         if (SelectedSearchMode.Mode == SearchMode.ConversationalAi)
@@ -237,8 +268,33 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
         {
             results = await local.SearchAsync(request);
         }
-        foreach (var result in results) Results.Add(new SearchResultRow { Subject = result.Message.Subject, Sender = $"{result.Message.SenderName} <{result.Message.SenderAddress}>", Account = result.Message.AccountId, Received = result.Message.ReceivedUtc.ToLocalTime().ToString("g"), Excerpt = result.Excerpt.Replace("<b>", "").Replace("</b>", ""), Explanation = result.Explanation ?? "Local match", Message = result.Message });
+        var accountNames = Accounts.ToDictionary(a => a.AccountId, a => string.IsNullOrWhiteSpace(a.EmailAddress) || a.EmailAddress == a.DisplayName ? a.DisplayName : $"{a.DisplayName} <{a.EmailAddress}>");
+        foreach (var result in results)
+        {
+            var isSent = string.Equals(result.Message.FolderType, "Sent", StringComparison.OrdinalIgnoreCase);
+            Results.Add(new SearchResultRow
+            {
+                Subject = result.Message.Subject,
+                Sender = $"{result.Message.SenderName} <{result.Message.SenderAddress}>",
+                AccountId = result.Message.AccountId,
+                Account = accountNames.GetValueOrDefault(result.Message.AccountId, result.Message.AccountId),
+                SourceLabel = isSent ? "Sent Items" : "Inbox",
+                IsSent = isSent,
+                Received = result.Message.ReceivedUtc.ToLocalTime().ToString("g"),
+                Excerpt = result.Excerpt.Replace("<b>", "").Replace("</b>", ""),
+                Explanation = result.Explanation ?? "Local match",
+                Message = result.Message
+            });
+        }
+        ResultsView.Refresh();
         ResultSummary = $"{Results.Count} result(s) · {SelectedSearchMode.DisplayName}";
+    }
+    private void ApplyResultViewState()
+    {
+        ResultsView.GroupDescriptions.Clear();
+        if (GroupResultsByAccount)
+            ResultsView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SearchResultRow.Account)));
+        ResultsView.Refresh();
     }
     private Task RefreshCoverageAsync() => RefreshCoverageAsync(Accounts.Where(a => a.IsSelected).Select(a => a.AccountId).ToHashSet());
     private async Task RefreshAccountCoverageAsync()

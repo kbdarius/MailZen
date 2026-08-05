@@ -70,6 +70,31 @@ public sealed class SearchContractsTests
     }
 
     [Fact]
+    public async Task SentItemsAreHiddenUnlessScopeIncludesSentItems()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"mailzen-sent-test-{Guid.NewGuid():N}.db");
+        try
+        {
+            var database = new MailZenDatabase(path);
+            await database.RegisterFolderAsync(new OutlookFolder("sent-folder", "account-1", "sent-entry", "\\Sent Items", "Sent"));
+            await database.UpsertMessageAsync(new IndexedMessage(
+                "sent-message", "account-1", "sent-folder", "store-1", "sent-entry", null, "Moving quote sent",
+                "Jim", "jim@example.test", "The moving quote is attached.", DateTime.UtcNow, false, false, "",
+                FolderType: "Sent"));
+
+            var hidden = await database.SearchAsync(new SearchRequest(
+                "moving quote", new SearchScope(new HashSet<string> { "account-1" })));
+            var visible = await database.SearchAsync(new SearchRequest(
+                "moving quote", new SearchScope(new HashSet<string> { "account-1" }, IncludeSentItems: true)));
+
+            Assert.Empty(hidden);
+            Assert.Single(visible);
+            Assert.Equal("Sent", visible[0].Message.FolderType);
+        }
+        finally { SqliteConnection.ClearAllPools(); if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
     public async Task AiOrchestrationBoundsCandidatePayloadAndFallsBack()
     {
         var candidates = Enumerable.Range(1, 250_000).Select(i => new SearchResult(

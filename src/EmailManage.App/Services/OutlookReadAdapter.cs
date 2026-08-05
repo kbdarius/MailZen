@@ -13,6 +13,7 @@ namespace EmailManage.Services;
 public sealed class OutlookReadAdapter : IOutlookReadService
 {
     private const int OlFolderInbox = 6;
+    private const int OlFolderSentMail = 5;
 
     public async Task<IReadOnlyList<OutlookAccount>> GetAccountsAsync(CancellationToken cancellationToken = default)
     {
@@ -67,7 +68,7 @@ public sealed class OutlookReadAdapter : IOutlookReadService
         var folders = new List<OutlookFolder>();
         await RunStaAsync(() =>
         {
-            dynamic? app = null; dynamic? session = null; dynamic? store = null; dynamic? inbox = null;
+            dynamic? app = null; dynamic? session = null; dynamic? store = null; dynamic? inbox = null; dynamic? sent = null;
             try
             {
                 app = GetOrCreateOutlookApplication();
@@ -75,8 +76,17 @@ public sealed class OutlookReadAdapter : IOutlookReadService
                 store = session.GetStoreFromID(accountId);
                 inbox = store.GetDefaultFolder(OlFolderInbox);
                 folders.Add(new OutlookFolder((string)inbox.EntryID, accountId, (string)inbox.EntryID, (string)inbox.FolderPath, "Inbox"));
+                try
+                {
+                    sent = store.GetDefaultFolder(OlFolderSentMail);
+                    folders.Add(new OutlookFolder((string)sent.EntryID, accountId, (string)sent.EntryID, (string)sent.FolderPath, "Sent"));
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticLogger.Instance.Warn("Outlook adapter: Sent Items folder unavailable for {Account}: {Error}", accountId, ex.Message);
+                }
             }
-            finally { Release((object?)inbox); Release((object?)store); Release((object?)session); Release((object?)app); }
+            finally { Release((object?)sent); Release((object?)inbox); Release((object?)store); Release((object?)session); Release((object?)app); }
         }, cancellationToken);
         foreach (var folder in folders)
         {
@@ -161,7 +171,8 @@ public sealed class OutlookReadAdapter : IOutlookReadService
                         SenderAddress: senderAddress, BodyText: (string?)item.Body ?? string.Empty,
                         ReceivedUtc: received.ToUniversalTime(), IsUnread: (bool?)item.UnRead ?? false,
                         HasAttachments: ((int?)item.Attachments?.Count ?? 0) > 0,
-                        AttachmentNames: ReadAttachmentNames(item), ConversationId: TryGetString(item, "ConversationID"));
+                        AttachmentNames: ReadAttachmentNames(item), ConversationId: TryGetString(item, "ConversationID"),
+                        FolderType: folder.FolderType);
                     writer.WriteAsync(message, token).AsTask().GetAwaiter().GetResult();
                 }
                 finally { Release((object?)item); }

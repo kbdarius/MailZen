@@ -18,7 +18,7 @@ public sealed class EmailIndexCoordinator : IEmailIndexService
     }
 
     public async Task SyncAsync(IReadOnlySet<string> accountIds, DateTime? sinceUtc, DateTime? beforeUtc = null,
-        IProgress<string>? progress = null, CancellationToken cancellationToken = default)
+        IProgress<string>? progress = null, CancellationToken cancellationToken = default, bool includeSentItems = false)
     {
         await _database.InitializeAsync(cancellationToken);
         var accounts = await _outlook.GetAccountsAsync(cancellationToken);
@@ -32,8 +32,14 @@ public sealed class EmailIndexCoordinator : IEmailIndexService
             {
                 await foreach (var folder in _outlook.EnumerateFoldersAsync(account.AccountId, cancellationToken))
                 {
+                    if (!includeSentItems && string.Equals(folder.FolderType, "Sent", StringComparison.OrdinalIgnoreCase))
+                    {
+                        progress?.Report($"Skipping Sent Items for {account.DisplayName}; enable Include Sent Items to index it.");
+                        continue;
+                    }
                     try
                     {
+                        await _database.RegisterFolderAsync(folder, cancellationToken);
                         DiagnosticLogger.Instance.Info("Index coordinator: starting {Account}/{Folder}.", account.DisplayName, folder.Path);
                         progress?.Report($"Indexing {account.DisplayName}: {folder.Path}");
                         var effectiveSinceUtc = sinceUtc;

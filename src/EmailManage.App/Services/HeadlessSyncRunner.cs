@@ -28,12 +28,13 @@ public sealed class HeadlessSyncRunner
             }
             var coordinator = new EmailIndexCoordinator(outlook, database);
             var accountIds = accounts.Select(a => a.AccountId).ToHashSet();
+            var includeSentItems = await new MailZenPreferencesStore().GetIncludeSentItemsAsync(cancellationToken);
             // Use the oldest successful checkpoint so a folder that failed during a prior
             // run is included in the catch-up window instead of being skipped.
             var lastSuccessful = requestedFromUtc.HasValue ? null : await database.GetEarliestSuccessfulSyncUtcAsync(accountIds, cancellationToken);
             var sinceUtc = requestedFromUtc ?? (lastSuccessful ?? DateTime.UtcNow.AddDays(-2)).AddDays(lastSuccessful.HasValue ? -2 : 0);
             DiagnosticLogger.Instance.Info("Headless sync: indexing from {SinceUtc} through {ToUtc}.", sinceUtc, requestedToUtc?.ToString("O") ?? "now");
-            await coordinator.SyncAsync(accountIds, sinceUtc, requestedToUtc, null, cancellationToken);
+            await coordinator.SyncAsync(accountIds, sinceUtc, requestedToUtc, null, cancellationToken, includeSentItems);
             DiagnosticLogger.Instance.Info("Headless sync: indexing coordinator completed.");
             var coverage = await database.GetIndexCoverageAsync(accountIds, cancellationToken);
             DiagnosticLogger.Instance.Info("Headless sync: database coverage is {MessageCount} message(s), earliest {Earliest}, latest {Latest}.", coverage.MessageCount, coverage.EarliestReceivedUtc?.ToString("O") ?? "none", coverage.LatestReceivedUtc?.ToString("O") ?? "none");

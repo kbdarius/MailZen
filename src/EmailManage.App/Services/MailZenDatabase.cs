@@ -213,6 +213,33 @@ public sealed class MailZenDatabase
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task RegisterFolderAsync(OutlookFolder folder, CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO accounts(id, store_id, display_name, email_address)
+            VALUES ($account, $store, $account, '')
+            ON CONFLICT(id) DO UPDATE SET store_id = excluded.store_id;
+            INSERT INTO folders(id, account_id, entry_id, folder_path, folder_type)
+            VALUES ($folder, $account, $entry, $path, $type)
+            ON CONFLICT(id) DO UPDATE SET
+                account_id = excluded.account_id,
+                entry_id = excluded.entry_id,
+                folder_path = excluded.folder_path,
+                folder_type = excluded.folder_type;
+            """;
+        command.Parameters.AddWithValue("$account", folder.AccountId);
+        command.Parameters.AddWithValue("$store", folder.AccountId);
+        command.Parameters.AddWithValue("$folder", folder.FolderId);
+        command.Parameters.AddWithValue("$entry", folder.EntryId);
+        command.Parameters.AddWithValue("$path", folder.Path);
+        command.Parameters.AddWithValue("$type", folder.FolderType);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task UpsertMessagesAsync(IReadOnlyList<IndexedMessage> messages, CancellationToken cancellationToken = default)
     {
         await InitializeAsync(cancellationToken);
@@ -317,15 +344,19 @@ public sealed class MailZenDatabase
         if (request.Scope.ReceivedBeforeUtc.HasValue) { command.Parameters.AddWithValue("$before", request.Scope.ReceivedBeforeUtc.Value.ToUniversalTime().ToString("O")); predicates.Add("m.received_utc <= $before"); }
         if (request.Scope.IsUnread.HasValue) { command.Parameters.AddWithValue("$unread", request.Scope.IsUnread.Value ? 1 : 0); predicates.Add("m.is_unread = $unread"); }
         if (request.Scope.HasAttachments.HasValue) { command.Parameters.AddWithValue("$attachments", request.Scope.HasAttachments.Value ? 1 : 0); predicates.Add("m.has_attachments = $attachments"); }
+        command.Parameters.AddWithValue("$includeSent", request.Scope.IncludeSentItems ? 1 : 0);
+        predicates.Add("(LOWER(COALESCE(f.folder_type, '')) <> 'sent' OR $includeSent = 1)");
 
         command.CommandText = $"""
             SELECT m.message_id, m.account_id, m.folder_id, m.store_id, m.entry_id, m.internet_message_id,
                    m.conversation_id, m.subject, m.sender_name, m.sender_address, m.body_text,
                    m.received_utc, m.is_unread, m.has_attachments, m.attachment_names,
                    bm25(messages_fts) AS score,
-                   snippet(messages_fts, 5, '<b>', '</b>', '…', 24) AS excerpt
+                   snippet(messages_fts, 5, '<b>', '</b>', '…', 24) AS excerpt,
+                   f.folder_type
             FROM messages_fts
             JOIN messages m ON m.id = messages_fts.rowid
+            JOIN folders f ON f.id = m.folder_id
             WHERE messages_fts MATCH $match AND {string.Join(" AND ", predicates)}
             ORDER BY score ASC, m.received_utc DESC
             LIMIT $limit;
@@ -339,7 +370,8 @@ public sealed class MailZenDatabase
                 reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
                 reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(7), reader.GetString(8), reader.GetString(9),
                 reader.GetString(10), DateTime.Parse(reader.GetString(11)).ToUniversalTime(), reader.GetInt32(12) != 0,
-                reader.GetInt32(13) != 0, reader.GetString(14), reader.IsDBNull(6) ? null : reader.GetString(6));
+                reader.GetInt32(13) != 0, reader.GetString(14), reader.IsDBNull(6) ? null : reader.GetString(6),
+                reader.IsDBNull(17) ? "Inbox" : reader.GetString(17));
             results.Add(new SearchResult(message, reader.GetDouble(15), reader.IsDBNull(16) ? message.BodyText[..Math.Min(240, message.BodyText.Length)] : reader.GetString(16)));
         }
         return results;
