@@ -31,7 +31,7 @@ public sealed class HeadlessSyncRunner
             // Use the oldest successful checkpoint so a folder that failed during a prior
             // run is included in the catch-up window instead of being skipped.
             var lastSuccessful = requestedFromUtc.HasValue ? null : await database.GetEarliestSuccessfulSyncUtcAsync(accountIds, cancellationToken);
-            var sinceUtc = requestedFromUtc ?? lastSuccessful ?? DateTime.UtcNow.AddDays(-2);
+            var sinceUtc = requestedFromUtc ?? (lastSuccessful ?? DateTime.UtcNow.AddDays(-2)).AddDays(lastSuccessful.HasValue ? -2 : 0);
             DiagnosticLogger.Instance.Info("Headless sync: indexing from {SinceUtc} through {ToUtc}.", sinceUtc, requestedToUtc?.ToString("O") ?? "now");
             await coordinator.SyncAsync(accountIds, sinceUtc, requestedToUtc, null, cancellationToken);
             DiagnosticLogger.Instance.Info("Headless sync: indexing coordinator completed.");

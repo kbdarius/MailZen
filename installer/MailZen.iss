@@ -6,7 +6,7 @@
 ;   2. Resulting installer: installer\MailZenSetup-2.0.8.exe
 
 #define MyAppName "MailZen"
-#define MyAppVersion "2.0.8"
+#define MyAppVersion "2.0.9"
 #define MyAppPublisher "MailZen"
 #define MyAppURL "https://github.com/mailzen"
 #define MyAppExeName "MailZen.exe"
@@ -21,7 +21,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\installer
-OutputBaseFilename=MailZenSetup-2.0.8
+OutputBaseFilename=MailZenSetup-2.0.9
 SetupIconFile=..\src\EmailManage.App\Resources\mailzen.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -41,7 +41,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; All published files from the self-contained output
-Source: "..\publish-current-2.0.8\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\publish-current-2.0.9\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Conversational Outlook Search"

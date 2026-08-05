@@ -32,7 +32,9 @@
         <Button Content="Load date range" Command="{Binding SyncCommand}" Padding="10,6"/>
         <TextBlock Text="Automatic updates" FontWeight="SemiBold" Margin="0,14,0,4"/>
         <TextBlock Text="Daily sync resumes from the last successful checkpoint, so missed runs are caught up automatically. It runs without opening the search window." TextWrapping="Wrap" Foreground="#475569" FontSize="11" Margin="0,0,0,6"/>
-        <StackPanel Orientation="Horizontal"><Button Content="Schedule 2:00 AM" Command="{Binding ScheduleSyncCommand}" Margin="0,0,6,8"/><Button Content="Remove" Command="{Binding RemoveScheduleCommand}" Margin="0,0,0,8"/></StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,2"><TextBlock Text="Daily time" VerticalAlignment="Center" Margin="0,0,6,0"/><TextBox Text="{Binding DailySyncTime, UpdateSourceTrigger=PropertyChanged}" Width="72" ToolTip="Enter local time, for example 02:00 or 8:30 PM."/><TextBlock Text="(local time)" Foreground="#64748B" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0"/></StackPanel>
+        <StackPanel Orientation="Horizontal"><Button Content="Schedule daily sync" Command="{Binding ScheduleSyncCommand}" Margin="0,0,6,8"/><Button Content="Remove" Command="{Binding RemoveScheduleCommand}" Margin="0,0,0,8"/></StackPanel>
+        <Button Content="Sync new emails now" Command="{Binding SyncNewCommand}" Padding="10,6" HorizontalAlignment="Left" ToolTip="Syncs selected accounts from their last successful checkpoint, with a small overlap to catch newly arrived messages."/>
         <TextBlock Text="{Binding Status}" Foreground="#475569" TextWrapping="Wrap" Margin="0,10,0,0"/>
       </StackPanel></ScrollViewer>
     </Border>

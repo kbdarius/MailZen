@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Globalization;
 using EmailManage.Models;
 using EmailManage.Services;
 
@@ -44,6 +45,7 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
     private double _searchEndValue;
     private bool _isBusy;
     private string _activityStatus = string.Empty;
+    private string _dailySyncTime = "02:00";
     private readonly OpenAiCredentialStore _credentials = new();
     public ObservableCollection<SearchAccountRow> Accounts { get; } = new();
     public ObservableCollection<SearchResultRow> Results { get; } = new();
@@ -52,6 +54,7 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
     public string Status { get => _status; private set { _status = value; OnChanged(); } }
     public bool IsBusy { get => _isBusy; private set { _isBusy = value; OnChanged(); } }
     public string ActivityStatus { get => _activityStatus; private set { _activityStatus = value; OnChanged(); } }
+    public string DailySyncTime { get => _dailySyncTime; set { _dailySyncTime = value; OnChanged(); } }
     public string ResultSummary { get => _resultSummary; private set { _resultSummary = value; OnChanged(); } }
     public string ScopeSummary { get => _scopeSummary; private set { _scopeSummary = value; OnChanged(); } }
     public string IndexSummary { get => _indexSummary; private set { _indexSummary = value; OnChanged(); } }
@@ -79,6 +82,7 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
     public bool UseAi => !LocalSearchOnly;
     public ICommand SearchCommand { get; }
     public ICommand SyncCommand { get; }
+    public ICommand SyncNewCommand { get; }
     public ICommand ScheduleSyncCommand { get; }
     public ICommand RemoveScheduleCommand { get; }
     public ICommand SelectAllCommand { get; }
@@ -96,7 +100,8 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
         SetDateRange(DateTime.Today.AddYears(-1), DateTime.Today);
         SearchCommand = new AsyncCommand(RunSearchAsync);
         SyncCommand = new AsyncCommand(SyncAsync);
-        ScheduleSyncCommand = new AsyncCommand(async () => { await new WindowsSyncScheduler().ConfigureDailyAsync(new TimeOnly(2, 0)); Status = "Daily sync scheduled for 2:00 AM using MailZen --sync."; });
+        SyncNewCommand = new AsyncCommand(SyncNewAsync);
+        ScheduleSyncCommand = new AsyncCommand(ScheduleSyncAsync);
         RemoveScheduleCommand = new AsyncCommand(async () => { await new WindowsSyncScheduler().RemoveAsync(); Status = "Daily sync schedule removed."; });
         SelectAllCommand = new ActionCommand(() => { foreach (var a in Accounts) a.IsSelected = true; });
         ClearAllCommand = new ActionCommand(() => { foreach (var a in Accounts) a.IsSelected = false; });
@@ -141,6 +146,45 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
         Status = $"Sync complete. Indexed Outlook messages from {IndexFromDate:MMM d, yyyy} through {IndexToDate:MMM d, yyyy}.";
         await RefreshAccountCoverageAsync();
         await RefreshCoverageAsync();
+    }
+
+    private async Task SyncNewAsync()
+    {
+        var ids = Accounts.Where(a => a.IsSelected).Select(a => a.AccountId).ToHashSet();
+        if (ids.Count == 0) { Status = "Select at least one account to sync."; return; }
+        if (IsBusy) return;
+        IsBusy = true;
+        ActivityStatus = "Syncing new emails\u2026";
+        try
+        {
+            var lastSuccessful = await _database.GetEarliestSuccessfulSyncUtcAsync(ids);
+            var sinceUtc = (lastSuccessful ?? DateTime.UtcNow.AddDays(-2)).AddDays(lastSuccessful.HasValue ? -2 : 0);
+            Status = lastSuccessful.HasValue
+                ? $"Syncing selected accounts from {sinceUtc.ToLocalTime():g}\u2026"
+                : "No prior checkpoint found; syncing the last two days for the selected accounts\u2026";
+            await new EmailIndexCoordinator(_outlook, _database).SyncAsync(ids, sinceUtc, null,
+                new Progress<string>(s => Status = s));
+            Status = "New email sync complete.";
+            await RefreshAccountCoverageAsync();
+            await RefreshCoverageAsync();
+        }
+        catch (Exception ex) { Status = $"New email sync failed: {ex.Message}"; }
+        finally { IsBusy = false; ActivityStatus = string.Empty; }
+    }
+
+    private async Task ScheduleSyncAsync()
+    {
+        if (!TimeOnly.TryParse(DailySyncTime, CultureInfo.CurrentCulture, DateTimeStyles.AllowWhiteSpaces, out var time))
+        {
+            Status = "Enter a valid daily time, such as 02:00 or 8:30 PM.";
+            return;
+        }
+        try
+        {
+            await new WindowsSyncScheduler().ConfigureDailyAsync(time);
+            Status = $"Daily sync scheduled for {time:hh\\:mm tt} using MailZen --sync.";
+        }
+        catch (Exception ex) { Status = $"Could not schedule daily sync: {ex.Message}"; }
     }
     private async Task RunSearchAsync()
     {
