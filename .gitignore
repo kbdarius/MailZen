@@ -2,7 +2,7 @@
 **/bin/
 **/obj/
 publish/
-MailZen.exe
+/MailZen.exe
 Docs/*.html
 Docs/_assets/
 
