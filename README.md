@@ -8,16 +8,12 @@ MailZen indexes selected Outlook accounts into `%LOCALAPPDATA%\\MailZen\\MailZen
 
 ## How to Run (on your own PC)
 
-**Double-click `MailZen.bat`** in the project root. That's it.
+**Double-click `Build-MailZen.bat`** in the project root to build the release. It removes old release artifacts, builds and tests the app, creates the installer, leaves exactly these two versioned executables in the root, commits the result, and pushes `main` to GitHub:
 
-`MailZen.bat` now runs a release publish and copies the final executable to `MailZen.exe` in the repository root.  
-Then it launches that root executable.  
-Requires: .NET 8 SDK installed locally and Outlook Desktop running.
+- `MailZen-<version>.exe` — portable application executable.
+- `MailZenSetup-<version>.exe` — installer executable.
 
-> If the app doesn't start, rebuild first:
-> ```
-> dotnet publish src\EmailManage.App\EmailManage.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
-> ```
+Requires .NET 8 SDK, Inno Setup 6 (`ISCC.exe`), and Git authentication. The script removes nested executable files and compiler output after packaging.
 
 ---
 
