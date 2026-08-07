@@ -10,6 +10,7 @@ using System.IO;
 using System.Text.Json;
 using System.Globalization;
 using System.Windows.Data;
+using System.Windows.Media;
 using EmailManage.Models;
 using EmailManage.Services;
 
@@ -46,6 +47,10 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
     private double _searchEndValue;
     private bool _isBusy;
     private string _activityStatus = string.Empty;
+    private bool _hasApiKey;
+    private string _apiKeyStateText = "No API key saved.";
+    private Brush _apiKeyStateBrush = Brushes.SlateGray;
+    private Brush _statusBrush = Brushes.SlateGray;
     private string _dailySyncTime = "02:00";
     private bool _includeSentItems;
     private bool _groupResultsByAccount;
@@ -57,6 +62,7 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
     public string Query { get => _query; set { _query = value; OnChanged(); } }
     public string AppVersion { get; } = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "2.0.0";
     public string Status { get => _status; private set { _status = value; OnChanged(); } }
+    public Brush StatusBrush { get => _statusBrush; private set { _statusBrush = value; OnChanged(); } }
     public bool IsBusy { get => _isBusy; private set { _isBusy = value; OnChanged(); } }
     public string ActivityStatus { get => _activityStatus; private set { _activityStatus = value; OnChanged(); } }
     public string DailySyncTime { get => _dailySyncTime; set { _dailySyncTime = value; OnChanged(); } }
@@ -89,6 +95,10 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
     public string DatabasePath => _database.DatabasePath;
     public bool LocalSearchOnly { get => _localSearchOnly; set { _localSearchOnly = value; OnChanged(); } }
     public string ApiKey { get => _apiKey; set { _apiKey = value; OnChanged(); } }
+    public bool HasApiKey { get => _hasApiKey; private set { _hasApiKey = value; OnChanged(); OnChanged(nameof(CanEditApiKey)); } }
+    public bool CanEditApiKey => !HasApiKey;
+    public string ApiKeyStateText { get => _apiKeyStateText; private set { _apiKeyStateText = value; OnChanged(); } }
+    public Brush ApiKeyStateBrush { get => _apiKeyStateBrush; private set { _apiKeyStateBrush = value; OnChanged(); } }
     public DateTime? IndexFromDate { get => _indexFromDate; set { _indexFromDate = value; OnChanged(); } }
     public DateTime? IndexToDate { get => _indexToDate; set { _indexToDate = value; OnChanged(); } }
     public IReadOnlyList<string> ModelOptions { get; } = MailZenModelRegistry.SupportedModelIds;
@@ -135,9 +145,9 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
         RemoveScheduleCommand = new AsyncCommand(async () => { await new WindowsSyncScheduler().RemoveAsync(); Status = "Daily sync schedule removed."; });
         SelectAllCommand = new ActionCommand(() => { foreach (var a in Accounts) a.IsSelected = true; });
         ClearAllCommand = new ActionCommand(() => { foreach (var a in Accounts) a.IsSelected = false; });
-        SaveKeyCommand = new AsyncCommand(async () => { await _credentials.SetApiKeyAsync(ApiKey); ApiKey = string.Empty; Status = "API key saved in Windows Credential Manager."; });
+        SaveKeyCommand = new AsyncCommand(SaveKeyAsync);
         TestAiCommand = new AsyncCommand(TestAiAsync);
-        RemoveKeyCommand = new AsyncCommand(async () => { await _credentials.RemoveApiKeyAsync(); Status = "API key removed. Local search remains available."; });
+        RemoveKeyCommand = new AsyncCommand(RemoveKeyAsync);
         OpenDatabaseLocationCommand = new ActionCommand(OpenDatabaseLocation);
         OpenResultCommand = new AsyncParameterCommand(async value => { if (value is SearchResultRow row && !await new OutlookOpenService().TryOpenAsync(row.Message)) Status = "Could not open in Outlook; use the .msg fallback."; });
         ExportResultCommand = new AsyncParameterCommand(async value => { if (value is SearchResultRow row) Status = $"Exported to {await new OutlookOpenService().ExportToMsgAsync(row.Message)}"; });
@@ -158,6 +168,8 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
     {
         try
         {
+            HasApiKey = await _credentials.HasApiKeyAsync();
+            UpdateApiKeyState();
             IncludeSentItems = await _preferences.GetIncludeSentItemsAsync();
             foreach (var account in await _outlook.GetAccountsAsync()) Accounts.Add(new SearchAccountRow(account));
             await RefreshAccountCoverageAsync();
@@ -165,6 +177,42 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
             await RefreshCoverageAsync();
         }
         catch (Exception ex) { Status = $"Outlook unavailable: {ex.Message}"; }
+    }
+
+    private async Task SaveKeyAsync()
+    {
+        try
+        {
+            await _credentials.SetApiKeyAsync(ApiKey);
+            ApiKey = string.Empty;
+            HasApiKey = true;
+            UpdateApiKeyState();
+            SetStatus("API key saved securely. Click Test AI connection to verify the selected model.");
+        }
+        catch (Exception ex) { SetStatus($"API key was not saved: {ex.Message}", isError: true); }
+    }
+
+    private async Task RemoveKeyAsync()
+    {
+        await _credentials.RemoveApiKeyAsync();
+        ApiKey = string.Empty;
+        HasApiKey = false;
+        UpdateApiKeyState();
+        SetStatus("API key removed. Local search remains available.");
+    }
+
+    private void UpdateApiKeyState()
+    {
+        ApiKeyStateText = HasApiKey
+            ? "API key saved securely. The key field is locked until you click Remove."
+            : "No API key saved. Local search remains available.";
+        ApiKeyStateBrush = HasApiKey ? Brushes.ForestGreen : Brushes.SlateGray;
+    }
+
+    private void SetStatus(string message, bool isSuccess = false, bool isError = false)
+    {
+        StatusBrush = isSuccess ? Brushes.ForestGreen : isError ? Brushes.Firebrick : Brushes.SlateGray;
+        Status = message;
     }
     private async Task SyncAsync()
     {
@@ -240,9 +288,14 @@ public sealed class SearchWorkspaceViewModel : INotifyPropertyChanged
             using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             var provider = new OpenAiSearchProvider(httpClient, SearchModelProfile.Fast, SelectedModelId);
             var ok = await provider.CheckHealthAsync();
-            Status = ok ? $"AI connection succeeded using {SelectedModelId}." : $"AI connection failed for {SelectedModelId}. Check the API key and model.";
+            HasApiKey = await _credentials.HasApiKeyAsync();
+            UpdateApiKeyState();
+            if (ok)
+                SetStatus($"AI connection succeeded using {SelectedModelId}. The API key is valid and this model is accessible.", isSuccess: true);
+            else
+                SetStatus($"AI connection failed for {SelectedModelId}. Check the API key and model.", isError: true);
         }
-        catch (Exception ex) { Status = $"AI connection test failed: {ex.Message}"; }
+        catch (Exception ex) { SetStatus($"AI connection test failed: {ex.Message}", isError: true); }
         finally { IsBusy = false; ActivityStatus = string.Empty; }
     }
 

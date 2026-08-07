@@ -25,8 +25,9 @@
         <ComboBox ItemsSource="{Binding SearchModeOptions}" SelectedItem="{Binding SelectedSearchMode}" Margin="0,6,0,6"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayName}" ToolTip="{Binding Description}"/></DataTemplate></ComboBox.ItemTemplate><ComboBox.ToolTip>Hover over a mode for a quick explanation.</ComboBox.ToolTip></ComboBox>
         <TextBlock Text="Conversational AI and Boolean search are explicit modes; MailZen will not silently switch modes." TextWrapping="Wrap" Foreground="#475569" FontSize="11" Margin="0,0,0,12"/>
         <TextBlock Text="OpenAI API key" FontWeight="SemiBold"/>
-        <TextBox Text="{Binding ApiKey, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,6" ToolTip="Stored in Windows Credential Manager"/>
-        <StackPanel Orientation="Horizontal"><Button Content="Save key" Command="{Binding SaveKeyCommand}" Margin="0,0,6,8"/><Button Content="Test AI connection" Command="{Binding TestAiCommand}" Margin="0,0,6,8" ToolTip="Checks the saved API key and selected model."/><Button Content="Remove" Command="{Binding RemoveKeyCommand}" Margin="0,0,0,8"/></StackPanel>
+        <TextBox Text="{Binding ApiKey, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditApiKey}" Margin="0,6,0,4" ToolTip="Stored in Windows Credential Manager. Remove the saved key to enter a replacement."/>
+        <TextBlock Text="{Binding ApiKeyStateText}" Foreground="{Binding ApiKeyStateBrush}" TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"/>
+        <StackPanel Orientation="Horizontal"><Button Content="Save key" Command="{Binding SaveKeyCommand}" IsEnabled="{Binding CanEditApiKey}" Margin="0,0,6,8"/><Button Content="Test AI connection" Command="{Binding TestAiCommand}" IsEnabled="{Binding HasApiKey}" Margin="0,0,6,8" ToolTip="Checks the saved API key and selected model."/><Button Content="Remove" Command="{Binding RemoveKeyCommand}" IsEnabled="{Binding HasApiKey}" Margin="0,0,0,8"/></StackPanel>
         <TextBlock Text="AI receives only selected candidates and short excerpts. Local search modes never send email content." TextWrapping="Wrap" Foreground="#475569" FontSize="11" Margin="0,0,0,12"/>
         <TextBlock Text="Manual index range" FontWeight="SemiBold" Margin="0,14,0,4"/>
         <TextBlock Text="Overlapping loads are safe; existing message IDs are updated instead of duplicated." TextWrapping="Wrap" Foreground="#475569" FontSize="11" Margin="0,0,0,6"/>
@@ -37,7 +38,7 @@
         <StackPanel Orientation="Horizontal" Margin="0,0,0,2"><TextBlock Text="Daily time" VerticalAlignment="Center" Margin="0,0,6,0"/><TextBox Text="{Binding DailySyncTime, UpdateSourceTrigger=PropertyChanged}" Width="72" ToolTip="Enter local time, for example 02:00 or 8:30 PM."/><TextBlock Text="(local time)" Foreground="#64748B" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0"/></StackPanel>
         <StackPanel Orientation="Horizontal"><Button Content="Schedule daily sync" Command="{Binding ScheduleSyncCommand}" Margin="0,0,6,8"/><Button Content="Remove" Command="{Binding RemoveScheduleCommand}" Margin="0,0,0,8"/></StackPanel>
         <Button Content="Sync new emails now" Command="{Binding SyncNewCommand}" Padding="10,6" HorizontalAlignment="Left" ToolTip="Syncs selected accounts from their last successful checkpoint, with a small overlap to catch newly arrived messages."/>
-        <TextBlock Text="{Binding Status}" Foreground="#475569" TextWrapping="Wrap" Margin="0,10,0,0"/>
+        <TextBlock Text="{Binding Status}" Foreground="{Binding StatusBrush}" TextWrapping="Wrap" Margin="0,10,0,0"/>
       </StackPanel></ScrollViewer>
     </Border>
     <Grid Grid.Row="1" Grid.Column="1">

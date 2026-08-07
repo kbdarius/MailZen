@@ -15,9 +15,9 @@
     <Description>Conversational Outlook Classic search with a private local index</Description>
     <Company>MailZen</Company>
     <Copyright>Copyright © 2026</Copyright>
-    <Version>2.0.10</Version>
-    <FileVersion>2.0.10.0</FileVersion>
-    <AssemblyVersion>2.0.10.0</AssemblyVersion>
+    <Version>2.0.11</Version>
+    <FileVersion>2.0.11.0</FileVersion>
+    <AssemblyVersion>2.0.11.0</AssemblyVersion>
     <ApplicationIcon>Resources\mailzen.ico</ApplicationIcon>
   </PropertyGroup>
 

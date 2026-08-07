@@ -7,7 +7,7 @@
 
 #define MyAppName "MailZen"
 #ifndef MyAppVersion
-#define MyAppVersion "2.0.10"
+#define MyAppVersion "2.0.11"
 #endif
 #ifndef MyAppOutputBaseFilename
 #define MyAppOutputBaseFilename "MailZenSetup"
